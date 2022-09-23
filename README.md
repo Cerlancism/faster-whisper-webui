@@ -11,3 +11,15 @@ license: apache-2.0
 ---
 
 Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+
+# Running Locally
+
+To run this program locally, first install Python 3.9 and Git. Then install Pytorch 10.1 and all the dependencies:
+```
+pip install -r requirements.txt
+```
+
+Finally, run the "full" version of the app:
+```
+python app-full.py
+```
