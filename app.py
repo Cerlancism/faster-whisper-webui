@@ -65,7 +65,7 @@ class UI:
         return result["text"], segmentStream.read()
 
 
-def createUi(inputAudioMaxDuration):
+def createUi(inputAudioMaxDuration, share=False):
     ui = UI(inputAudioMaxDuration)
 
     ui_description = "Whisper is a general-purpose speech recognition model. It is trained on a large dataset of diverse " 
@@ -83,8 +83,7 @@ def createUi(inputAudioMaxDuration):
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
     ], outputs=[gr.Text(label="Transcription"), gr.Text(label="Segments")])
 
-
-    demo.launch()   
+    demo.launch(share=share)   
 
 if __name__ == '__main__':
     createUi(DEFAULT_INPUT_AUDIO_MAX_DURATION)
