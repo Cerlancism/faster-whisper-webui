@@ -14,7 +14,7 @@ Check out the configuration reference at https://huggingface.co/docs/hub/spaces-
 
 # Running Locally
 
-To run this program locally, first install Python 3.9+ and Git. Then install Pytorch 10.1 and all the dependencies:
+To run this program locally, first install Python 3.9+ and Git. Then install Pytorch 10.1+ and all the other dependencies:
 ```
 pip install -r requirements.txt
 ```
