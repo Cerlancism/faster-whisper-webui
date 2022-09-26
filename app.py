@@ -129,7 +129,7 @@ def getSubs(segments: Iterator[dict], format: str) -> str:
     return segmentStream.read()
     
 
-def createUi(inputAudioMaxDuration, share=False):
+def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
     ui = UI(inputAudioMaxDuration)
 
     ui_description = "Whisper is a general-purpose speech recognition model. It is trained on a large dataset of diverse " 
@@ -152,7 +152,7 @@ def createUi(inputAudioMaxDuration, share=False):
         gr.Text(label="Segments")
     ])
 
-    demo.launch(share=share)   
+    demo.launch(share=share, server_name=server_name)   
 
 if __name__ == '__main__':
     createUi(DEFAULT_INPUT_AUDIO_MAX_DURATION)
