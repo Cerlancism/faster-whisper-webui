@@ -10,7 +10,7 @@ import ffmpeg
 #os.system("pip install git+https://github.com/openai/whisper.git")
 
 # Limitations (set to -1 to disable)
-DEFAULT_INPUT_AUDIO_MAX_DURATION = 120 # seconds
+DEFAULT_INPUT_AUDIO_MAX_DURATION = 300 # seconds
 
 LANGUAGES = [ 
  "English", "Chinese", "German", "Spanish", "Russian", "Korean", 
