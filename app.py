@@ -21,6 +21,9 @@ from utils import slugify, write_srt, write_vtt
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
 
+# Whether or not to automatically delete all uploaded files, to save disk space
+DELETE_UPLOADED_FILES = True
+
 LANGUAGES = [ 
  "English", "Chinese", "German", "Spanish", "Russian", "Korean", 
  "French", "Japanese", "Portuguese", "Turkish", "Polish", "Catalan", 
@@ -49,40 +52,48 @@ class UI:
 
     def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task):
         source, sourceName = getSource(urlData, uploadFile, microphoneData)
-
-        selectedLanguage = languageName.lower() if len(languageName) > 0 else None
-        selectedModel = modelName if modelName is not None else "base"
-
-        if self.inputAudioMaxDuration > 0:
-            # Calculate audio length
-            audioDuration = ffmpeg.probe(source)["format"]["duration"]
-            
-            if float(audioDuration) > self.inputAudioMaxDuration:
-                return ("[ERROR]: Maximum audio file length is " + str(self.inputAudioMaxDuration) + "s, file was " + str(audioDuration) + "s"), "[ERROR]"
-
-        model = model_cache.get(selectedModel, None)
         
-        if not model:
-            model = whisper.load_model(selectedModel)
-            model_cache[selectedModel] = model
+        try:
+            selectedLanguage = languageName.lower() if len(languageName) > 0 else None
+            selectedModel = modelName if modelName is not None else "base"
 
-        # The results
-        result = model.transcribe(source, language=selectedLanguage, task=task)
+            if self.inputAudioMaxDuration > 0:
+                # Calculate audio length
+                audioDuration = ffmpeg.probe(source)["format"]["duration"]
+                
+                if float(audioDuration) > self.inputAudioMaxDuration:
+                    return ("[ERROR]: Maximum audio file length is " + str(self.inputAudioMaxDuration) + "s, file was " + str(audioDuration) + "s"), "[ERROR]"
 
-        text = result["text"]
-        vtt = getSubs(result["segments"], "vtt")
-        srt = getSubs(result["segments"], "srt")
+            model = model_cache.get(selectedModel, None)
+            
+            if not model:
+                model = whisper.load_model(selectedModel)
+                model_cache[selectedModel] = model
 
-        # Files that can be downloaded
-        downloadDirectory = tempfile.mkdtemp()
-        filePrefix = slugify(sourceName, allow_unicode=True)
+            # The results
+            result = model.transcribe(source, language=selectedLanguage, task=task)
 
-        download = []
-        download.append(createFile(srt, downloadDirectory, filePrefix + "-subs.srt"));
-        download.append(createFile(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
-        download.append(createFile(text, downloadDirectory, filePrefix + "-transcript.txt"));
+            text = result["text"]
+            vtt = getSubs(result["segments"], "vtt")
+            srt = getSubs(result["segments"], "srt")
 
-        return download, text, vtt
+            # Files that can be downloaded
+            downloadDirectory = tempfile.mkdtemp()
+            filePrefix = slugify(sourceName, allow_unicode=True)
+
+            download = []
+            download.append(createFile(srt, downloadDirectory, filePrefix + "-subs.srt"));
+            download.append(createFile(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
+            download.append(createFile(text, downloadDirectory, filePrefix + "-transcript.txt"));
+
+            return download, text, vtt
+
+        finally:
+            # Cleanup source
+            if DELETE_UPLOADED_FILES:
+                print("Deleting source file " + source)
+                os.remove(source)
+
 
 def getSource(urlData, uploadFile, microphoneData):
     if urlData:
