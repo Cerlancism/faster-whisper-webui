@@ -2,3 +2,4 @@ git+https://github.com/openai/whisper.git
 transformers
 ffmpeg-python==0.2.0
 gradio
+yt-dlp

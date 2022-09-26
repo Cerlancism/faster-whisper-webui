@@ -1,14 +1,19 @@
+from typing import Iterator
+
 from io import StringIO
 import os
+import pathlib
 import tempfile
 
-from typing import Iterator
+# External programs
+import whisper
+import ffmpeg
+
+# UI
 import gradio as gr
+from download import downloadUrl
 
 from utils import slugify, write_srt, write_vtt
-import whisper
-
-import ffmpeg
 
 #import os
 #os.system("pip install git+https://github.com/openai/whisper.git")
@@ -42,9 +47,8 @@ class UI:
     def __init__(self, inputAudioMaxDuration):
         self.inputAudioMaxDuration = inputAudioMaxDuration
 
-    def transcribeFile(self, modelName, languageName, uploadFile, microphoneData, task):
-        source = uploadFile if uploadFile is not None else microphoneData
-        sourceName = os.path.basename(source)
+    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task):
+        source, sourceName = getSource(urlData, uploadFile, microphoneData)
 
         selectedLanguage = languageName.lower() if len(languageName) > 0 else None
         selectedModel = modelName if modelName is not None else "base"
@@ -78,7 +82,20 @@ class UI:
         download.append(createFile(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
         download.append(createFile(text, downloadDirectory, filePrefix + "-transcript.txt"));
 
-        return text, vtt, download
+        return download, text, vtt
+
+def getSource(urlData, uploadFile, microphoneData):
+    if urlData:
+        # Download from YouTube
+        source = downloadUrl(urlData)
+    else:
+        # File input
+        source = uploadFile if uploadFile is not None else microphoneData
+
+    file_path = pathlib.Path(source)
+    sourceName = file_path.stem[:18] + file_path.suffix
+
+    return source, sourceName
 
 def createFile(text: str, directory: str, fileName: str) -> str:
     # Write the text to a file
@@ -99,6 +116,7 @@ def getSubs(segments: Iterator[dict], format: str) -> str:
 
     segmentStream.seek(0)
     return segmentStream.read()
+    
 
 def createUi(inputAudioMaxDuration, share=False):
     ui = UI(inputAudioMaxDuration)
@@ -113,13 +131,14 @@ def createUi(inputAudioMaxDuration, share=False):
     demo = gr.Interface(fn=ui.transcribeFile, description=ui_description, inputs=[
         gr.Dropdown(choices=["tiny", "base", "small", "medium", "large"], value="medium", label="Model"),
         gr.Dropdown(choices=sorted(LANGUAGES), label="Language"),
+        gr.Text(label="URL (YouTube, etc.)"),
         gr.Audio(source="upload", type="filepath", label="Upload Audio"), 
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
     ], outputs=[
+        gr.File(label="Download"),
         gr.Text(label="Transcription"), 
-        gr.Text(label="Segments"),
-        gr.File(label="Download")
+        gr.Text(label="Segments")
     ])
 
     demo.launch(share=share)   
