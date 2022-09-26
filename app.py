@@ -1,7 +1,11 @@
 from io import StringIO
+import os
+import tempfile
+
+from typing import Iterator
 import gradio as gr
 
-from utils import write_vtt
+from utils import slugify, write_srt, write_vtt
 import whisper
 
 import ffmpeg
@@ -40,6 +44,8 @@ class UI:
 
     def transcribeFile(self, modelName, languageName, uploadFile, microphoneData, task):
         source = uploadFile if uploadFile is not None else microphoneData
+        sourceName = os.path.basename(source)
+
         selectedLanguage = languageName.lower() if len(languageName) > 0 else None
         selectedModel = modelName if modelName is not None else "base"
 
@@ -56,14 +62,43 @@ class UI:
             model = whisper.load_model(selectedModel)
             model_cache[selectedModel] = model
 
+        # The results
         result = model.transcribe(source, language=selectedLanguage, task=task)
 
-        segmentStream = StringIO()
-        write_vtt(result["segments"], file=segmentStream)
-        segmentStream.seek(0)
+        text = result["text"]
+        vtt = getSubs(result["segments"], "vtt")
+        srt = getSubs(result["segments"], "srt")
 
-        return result["text"], segmentStream.read()
+        # Files that can be downloaded
+        downloadDirectory = tempfile.mkdtemp()
+        filePrefix = slugify(sourceName, allow_unicode=True)
 
+        download = []
+        download.append(createFile(srt, downloadDirectory, filePrefix + "-subs.srt"));
+        download.append(createFile(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
+        download.append(createFile(text, downloadDirectory, filePrefix + "-transcript.txt"));
+
+        return text, vtt, download
+
+def createFile(text: str, directory: str, fileName: str) -> str:
+    # Write the text to a file
+    with open(os.path.join(directory, fileName), 'w+', encoding="utf-8") as file:
+        file.write(text)
+
+    return file.name
+
+def getSubs(segments: Iterator[dict], format: str) -> str:
+    segmentStream = StringIO()
+
+    if format == 'vtt':
+        write_vtt(segments, file=segmentStream)
+    elif format == 'srt':
+        write_srt(segments, file=segmentStream)
+    else:
+        raise Exception("Unknown format " + format)
+
+    segmentStream.seek(0)
+    return segmentStream.read()
 
 def createUi(inputAudioMaxDuration, share=False):
     ui = UI(inputAudioMaxDuration)
@@ -81,7 +116,11 @@ def createUi(inputAudioMaxDuration, share=False):
         gr.Audio(source="upload", type="filepath", label="Upload Audio"), 
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
-    ], outputs=[gr.Text(label="Transcription"), gr.Text(label="Segments")])
+    ], outputs=[
+        gr.Text(label="Transcription"), 
+        gr.Text(label="Segments"),
+        gr.File(label="Download")
+    ])
 
     demo.launch(share=share)   
 
