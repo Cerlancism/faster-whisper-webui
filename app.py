@@ -1,3 +1,4 @@
+import re
 from typing import Iterator
 
 from io import StringIO
@@ -15,14 +16,14 @@ from download import downloadUrl
 
 from utils import slugify, write_srt, write_vtt
 
-#import os
-#os.system("pip install git+https://github.com/openai/whisper.git")
-
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
 
 # Whether or not to automatically delete all uploaded files, to save disk space
 DELETE_UPLOADED_FILES = True
+
+# Gradio seems to truncate files without keeping the extension, so we need to truncate the file prefix ourself 
+MAX_FILE_PREFIX_LENGTH = 17
 
 LANGUAGES = [ 
  "English", "Chinese", "German", "Spanish", "Russian", "Korean", 
@@ -74,8 +75,13 @@ class UI:
             result = model.transcribe(source, language=selectedLanguage, task=task)
 
             text = result["text"]
-            vtt = getSubs(result["segments"], "vtt")
-            srt = getSubs(result["segments"], "srt")
+
+            language = result["language"]
+            languageMaxLineWidth = getMaxLineWidth(language)
+
+            print("Max line width " + str(languageMaxLineWidth))
+            vtt = getSubs(result["segments"], "vtt", languageMaxLineWidth)
+            srt = getSubs(result["segments"], "srt", languageMaxLineWidth)
 
             # Files that can be downloaded
             downloadDirectory = tempfile.mkdtemp()
@@ -95,6 +101,15 @@ class UI:
                 os.remove(source)
 
 
+def getMaxLineWidth(language: str) -> int:
+    if (language == "ja" or language == "zh"):
+        # Chinese characters and kana are wider, so limit line length to 40 characters
+        return 40
+    else:
+        # TODO: Add more languages
+        # 80 latin characters should fit on a 1080p/720p screen
+        return 80
+
 def getSource(urlData, uploadFile, microphoneData):
     if urlData:
         # Download from YouTube
@@ -104,7 +119,7 @@ def getSource(urlData, uploadFile, microphoneData):
         source = uploadFile if uploadFile is not None else microphoneData
 
     file_path = pathlib.Path(source)
-    sourceName = file_path.stem[:18] + file_path.suffix
+    sourceName = file_path.stem[:MAX_FILE_PREFIX_LENGTH] + file_path.suffix
 
     return source, sourceName
 
@@ -115,13 +130,13 @@ def createFile(text: str, directory: str, fileName: str) -> str:
 
     return file.name
 
-def getSubs(segments: Iterator[dict], format: str) -> str:
+def getSubs(segments: Iterator[dict], format: str, maxLineWidth: int) -> str:
     segmentStream = StringIO()
 
     if format == 'vtt':
-        write_vtt(segments, file=segmentStream)
+        write_vtt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
     elif format == 'srt':
-        write_srt(segments, file=segmentStream)
+        write_srt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
     else:
         raise Exception("Unknown format " + format)
 

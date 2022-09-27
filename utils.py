@@ -53,10 +53,10 @@ def write_txt(transcript: Iterator[dict], file: TextIO):
         print(segment['text'].strip(), file=file, flush=True)
 
 
-def write_vtt(transcript: Iterator[dict], file: TextIO):
+def write_vtt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
     print("WEBVTT\n", file=file)
     for segment in transcript:
-        text = processText(segment['text']).replace('-->', '->')
+        text = processText(segment['text'], maxLineWidth).replace('-->', '->')
 
         print(
             f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
@@ -66,7 +66,7 @@ def write_vtt(transcript: Iterator[dict], file: TextIO):
         )
 
 
-def write_srt(transcript: Iterator[dict], file: TextIO):
+def write_srt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
     """
     Write a transcript to a file in SRT format.
     Example usage:
@@ -79,7 +79,7 @@ def write_srt(transcript: Iterator[dict], file: TextIO):
             write_srt(result["segments"], file=srt)
     """
     for i, segment in enumerate(transcript, start=1):
-        text = processText(segment['text'].strip()).replace('-->', '->')
+        text = processText(segment['text'].strip(), maxLineWidth).replace('-->', '->')
 
         # write srt lines
         print(
@@ -91,8 +91,11 @@ def write_srt(transcript: Iterator[dict], file: TextIO):
             flush=True,
         )
 
-def processText(text: str):
-    lines = textwrap.wrap(text, width=47, tabsize=4)
+def processText(text: str, maxLineWidth=None):
+    if (maxLineWidth is None or maxLineWidth < 0):
+        return text
+
+    lines = textwrap.wrap(text, width=maxLineWidth, tabsize=4)
     return '\n'.join(lines)
 
 def slugify(value, allow_unicode=False):
