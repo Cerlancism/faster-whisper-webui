@@ -1,3 +1,4 @@
+import textwrap
 import unicodedata
 import re
 
@@ -55,9 +56,11 @@ def write_txt(transcript: Iterator[dict], file: TextIO):
 def write_vtt(transcript: Iterator[dict], file: TextIO):
     print("WEBVTT\n", file=file)
     for segment in transcript:
+        text = processText(segment['text']).replace('-->', '->')
+
         print(
             f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
-            f"{segment['text'].replace('-->', '->')}\n",
+            f"{text}\n",
             file=file,
             flush=True,
         )
@@ -76,15 +79,21 @@ def write_srt(transcript: Iterator[dict], file: TextIO):
             write_srt(result["segments"], file=srt)
     """
     for i, segment in enumerate(transcript, start=1):
+        text = processText(segment['text'].strip()).replace('-->', '->')
+
         # write srt lines
         print(
             f"{i}\n"
             f"{format_timestamp(segment['start'], always_include_hours=True, fractionalSeperator=',')} --> "
             f"{format_timestamp(segment['end'], always_include_hours=True, fractionalSeperator=',')}\n"
-            f"{segment['text'].strip().replace('-->', '->')}\n",
+            f"{text}\n",
             file=file,
             flush=True,
         )
+
+def processText(text: str):
+    lines = textwrap.wrap(text, width=47, tabsize=4)
+    return '\n'.join(lines)
 
 def slugify(value, allow_unicode=False):
     """
