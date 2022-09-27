@@ -13,7 +13,7 @@ class FilenameCollectorPP(PostProcessor):
         self.filenames.append(information["filepath"])
         return [], information
 
-def downloadUrl(url: str):
+def downloadUrl(url: str, maxDuration: int = None):
     destinationDirectory = mkdtemp()
 
     ydl_opts = {
@@ -26,6 +26,13 @@ def downloadUrl(url: str):
     filename_collector = FilenameCollectorPP()
 
     with YoutubeDL(ydl_opts) as ydl:
+        if maxDuration:
+            info = ydl.extract_info(url, download=False)
+            duration = info['duration']
+
+            if duration >= maxDuration:
+                raise ExceededMaximumDuration(videoDuration=duration, maxDuration=maxDuration, message="Video is too long")
+
         ydl.add_post_processor(filename_collector)
         ydl.download([url])
 
@@ -36,3 +43,10 @@ def downloadUrl(url: str):
     print("Downloaded " + result)
 
     return result 
+
+
+class ExceededMaximumDuration(Exception):
+    def __init__(self, videoDuration, maxDuration, message):
+        self.videoDuration = videoDuration
+        self.maxDuration = maxDuration
+        super().__init__(message)

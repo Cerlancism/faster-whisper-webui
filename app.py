@@ -12,7 +12,7 @@ import ffmpeg
 
 # UI
 import gradio as gr
-from download import downloadUrl
+from download import ExceededMaximumDuration, downloadUrl
 
 from utils import slugify, write_srt, write_vtt
 
@@ -52,54 +52,70 @@ class UI:
         self.inputAudioMaxDuration = inputAudioMaxDuration
 
     def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task):
-        source, sourceName = getSource(urlData, uploadFile, microphoneData)
-        
         try:
-            selectedLanguage = languageName.lower() if len(languageName) > 0 else None
-            selectedModel = modelName if modelName is not None else "base"
-
-            if self.inputAudioMaxDuration > 0:
-                # Calculate audio length
-                audioDuration = ffmpeg.probe(source)["format"]["duration"]
-                
-                if float(audioDuration) > self.inputAudioMaxDuration:
-                    return ("[ERROR]: Maximum audio file length is " + str(self.inputAudioMaxDuration) + "s, file was " + str(audioDuration) + "s"), "[ERROR]"
-
-            model = model_cache.get(selectedModel, None)
+            source, sourceName = self.getSource(urlData, uploadFile, microphoneData)
             
-            if not model:
-                model = whisper.load_model(selectedModel)
-                model_cache[selectedModel] = model
+            try:
+                selectedLanguage = languageName.lower() if len(languageName) > 0 else None
+                selectedModel = modelName if modelName is not None else "base"
 
-            # The results
-            result = model.transcribe(source, language=selectedLanguage, task=task)
+                if self.inputAudioMaxDuration > 0:
+                    # Calculate audio length
+                    audioDuration = ffmpeg.probe(source)["format"]["duration"]
+                    
+                    if float(audioDuration) > self.inputAudioMaxDuration:
+                        return [], ("[ERROR]: Maximum audio file length is " + str(self.inputAudioMaxDuration) + "s, file was " + str(audioDuration) + "s"), "[ERROR]"
 
-            text = result["text"]
+                model = model_cache.get(selectedModel, None)
+                
+                if not model:
+                    model = whisper.load_model(selectedModel)
+                    model_cache[selectedModel] = model
 
-            language = result["language"]
-            languageMaxLineWidth = getMaxLineWidth(language)
+                # The results
+                result = model.transcribe(source, language=selectedLanguage, task=task)
 
-            print("Max line width " + str(languageMaxLineWidth))
-            vtt = getSubs(result["segments"], "vtt", languageMaxLineWidth)
-            srt = getSubs(result["segments"], "srt", languageMaxLineWidth)
+                text = result["text"]
 
-            # Files that can be downloaded
-            downloadDirectory = tempfile.mkdtemp()
-            filePrefix = slugify(sourceName, allow_unicode=True)
+                language = result["language"]
+                languageMaxLineWidth = getMaxLineWidth(language)
 
-            download = []
-            download.append(createFile(srt, downloadDirectory, filePrefix + "-subs.srt"));
-            download.append(createFile(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
-            download.append(createFile(text, downloadDirectory, filePrefix + "-transcript.txt"));
+                print("Max line width " + str(languageMaxLineWidth))
+                vtt = getSubs(result["segments"], "vtt", languageMaxLineWidth)
+                srt = getSubs(result["segments"], "srt", languageMaxLineWidth)
 
-            return download, text, vtt
+                # Files that can be downloaded
+                downloadDirectory = tempfile.mkdtemp()
+                filePrefix = slugify(sourceName, allow_unicode=True)
 
-        finally:
-            # Cleanup source
-            if DELETE_UPLOADED_FILES:
-                print("Deleting source file " + source)
-                os.remove(source)
+                download = []
+                download.append(createFile(srt, downloadDirectory, filePrefix + "-subs.srt"));
+                download.append(createFile(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
+                download.append(createFile(text, downloadDirectory, filePrefix + "-transcript.txt"));
 
+                return download, text, vtt
+
+            finally:
+                # Cleanup source
+                if DELETE_UPLOADED_FILES:
+                    print("Deleting source file " + source)
+                    os.remove(source)
+        
+        except ExceededMaximumDuration as e:
+            return [], ("[ERROR]: Maximum remote video length is " + str(e.maxDuration) + "s, file was " + str(e.videoDuration) + "s"), "[ERROR]"
+
+    def getSource(self, urlData, uploadFile, microphoneData):
+        if urlData:
+            # Download from YouTube
+            source = downloadUrl(urlData, self.inputAudioMaxDuration)
+        else:
+            # File input
+            source = uploadFile if uploadFile is not None else microphoneData
+
+        file_path = pathlib.Path(source)
+        sourceName = file_path.stem[:MAX_FILE_PREFIX_LENGTH] + file_path.suffix
+
+        return source, sourceName
 
 def getMaxLineWidth(language: str) -> int:
     if (language == "ja" or language == "zh"):
@@ -109,19 +125,6 @@ def getMaxLineWidth(language: str) -> int:
         # TODO: Add more languages
         # 80 latin characters should fit on a 1080p/720p screen
         return 80
-
-def getSource(urlData, uploadFile, microphoneData):
-    if urlData:
-        # Download from YouTube
-        source = downloadUrl(urlData)
-    else:
-        # File input
-        source = uploadFile if uploadFile is not None else microphoneData
-
-    file_path = pathlib.Path(source)
-    sourceName = file_path.stem[:MAX_FILE_PREFIX_LENGTH] + file_path.suffix
-
-    return source, sourceName
 
 def createFile(text: str, directory: str, fileName: str) -> str:
     # Write the text to a file
