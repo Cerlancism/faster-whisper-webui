@@ -154,6 +154,8 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "
     ui_description += " as well as speech translation and language identification. "
 
+    ui_description += "\n\n" + "Note: You can upload more audio (and even video) types by changing to All Files (*.*) in the file selector."
+
     if inputAudioMaxDuration > 0:
         ui_description += "\n\n" + "Max audio file length: " + str(inputAudioMaxDuration) + " s"
 
