@@ -26,7 +26,7 @@ def downloadUrl(url: str, maxDuration: int = None):
     filename_collector = FilenameCollectorPP()
 
     with YoutubeDL(ydl_opts) as ydl:
-        if maxDuration:
+        if maxDuration and maxDuration > 0:
             info = ydl.extract_info(url, download=False)
             duration = info['duration']
 

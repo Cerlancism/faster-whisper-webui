@@ -59,13 +59,6 @@ class UI:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                if self.inputAudioMaxDuration > 0:
-                    # Calculate audio length
-                    audioDuration = ffmpeg.probe(source)["format"]["duration"]
-                    
-                    if float(audioDuration) > self.inputAudioMaxDuration:
-                        return [], ("[ERROR]: Maximum audio file length is " + str(self.inputAudioMaxDuration) + "s, file was " + str(audioDuration) + "s"), "[ERROR]"
-
                 model = model_cache.get(selectedModel, None)
                 
                 if not model:
@@ -111,6 +104,13 @@ class UI:
         else:
             # File input
             source = uploadFile if uploadFile is not None else microphoneData
+
+            if self.inputAudioMaxDuration > 0:
+                # Calculate audio length
+                audioDuration = ffmpeg.probe(source)["format"]["duration"]
+            
+                if float(audioDuration) > self.inputAudioMaxDuration:
+                    raise ExceededMaximumDuration(videoDuration=audioDuration, maxDuration=self.inputAudioMaxDuration, message="Video is too long")
 
         file_path = pathlib.Path(source)
         sourceName = file_path.stem[:MAX_FILE_PREFIX_LENGTH] + file_path.suffix
