@@ -118,7 +118,7 @@ class UI:
         return source, sourceName
 
 def getMaxLineWidth(language: str) -> int:
-    if (language == "ja" or language == "zh"):
+    if (language and language.lower() in ["japanese", "ja", "chinese", "zh"]):
         # Chinese characters and kana are wider, so limit line length to 40 characters
         return 40
     else:
