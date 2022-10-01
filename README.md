@@ -23,3 +23,21 @@ Finally, run the full version (no audio length restrictions) of the app:
 ```
 python app-full.py
 ```
+
+# Docker
+
+To run it in Docker, first install Docker and optionally the NVIDIA Container Toolkit in order to use the GPU. Then 
+check out this repository and build an image:
+```
+sudo docker build -t whisper-webui:1 .
+```
+
+You can then start the WebUI with GPU support like so:
+```
+sudo docker run -d --gpus=all -p 7860:7860 whisper-webui:1
+```
+
+Leave out "--gpus=all" if you don't have access to a GPU with enough memory, and are fine with running it on the CPU only:
+```
+sudo docker run -d -p 7860:7860 whisper-webui:1
+```
