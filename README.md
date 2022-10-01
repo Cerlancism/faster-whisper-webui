@@ -45,5 +45,8 @@ sudo docker run -d -p 7860:7860 whisper-webui:1
 ## Caching
 
 Note that the models themselves are currently not included in the Docker images, and will be downloaded on the demand.
-To avoid this, bind the directory /root/.cache/whisper to some directory on the host, where you can (optionally) 
-prepopulate the directory with the different Whisper models.
+To avoid this, bind the directory /root/.cache/whisper to some directory on the host (for instance /home/administrator/.cache/whisper), where you can (optionally) 
+prepopulate the directory with the different Whisper models. 
+```
+sudo docker run -d --gpus=all -p 7860:7860 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper whisper-webui:1
+```
