@@ -72,10 +72,17 @@ class UI:
 
                 # The results
                 if (vad == 'silero-vad'):
-                    # Use Silero VAD
+                    # Use Silero VAD and include gaps
                     if (self.vad_model is None):
-                        self.vad_model = VadSileroTranscription()
+                        self.vad_model = VadSileroTranscription(transcribe_non_speech= True)
                     result = self.vad_model.transcribe(source, whisperCallable)
+                elif (vad == 'silero-vad-skip-gaps'):
+                    # Use Silero VAD 
+                    if (self.vad_model is None):
+                        self.vad_model = VadSileroTranscription(transcribe_non_speech= True)
+                        
+                    skip_gaps = VadSileroTranscription(transcribe_non_speech = False, copy=self.vad_model)
+                    result = skip_gaps.transcribe(source, whisperCallable)
                 elif (vad == 'periodic-vad'):
                     # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
                     # it may create a break in the middle of a sentence, causing some artifacts.
@@ -184,7 +191,7 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
         gr.Audio(source="upload", type="filepath", label="Upload Audio"), 
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
-        gr.Dropdown(choices=["none", "silero-vad", "periodic-vad"], label="VAD"),
+        gr.Dropdown(choices=["none", "silero-vad", "silero-vad-skip-gaps", "periodic-vad"], label="VAD"),
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
