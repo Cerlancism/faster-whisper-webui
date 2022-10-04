@@ -42,7 +42,23 @@ class AbstractTranscription(ABC):
         """
         return 
 
-    def transcribe(self, audio: str, whisperCallable: Callable[[Union[str, np.ndarray, torch.Tensor]], dict[str, Union[dict, Any]]]):
+    def transcribe(self, audio: str, whisperCallable):
+        """
+        Transcribe the given audo file.
+
+        Parameters
+        ----------
+        audio: str
+            The audio file.
+
+        whisperCallable: Callable[[Union[str, np.ndarray, torch.Tensor]], dict[str, Union[dict, Any]]]
+            The callback that is used to invoke Whisper on an audio file/buffer.
+
+        Returns
+        -------
+        A list of start and end timestamps, in fractional seconds.
+        """
+
         # get speech timestamps from full audio file
         seconds_timestamps = self.get_transcribe_timestamps(audio)
 
