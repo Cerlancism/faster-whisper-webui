@@ -15,6 +15,7 @@ import gradio as gr
 from download import ExceededMaximumDuration, downloadUrl
 
 from utils import slugify, write_srt, write_vtt
+from vad import VadTranscription
 
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
@@ -49,9 +50,10 @@ model_cache = dict()
 
 class UI:
     def __init__(self, inputAudioMaxDuration):
+        self.vad_model = None
         self.inputAudioMaxDuration = inputAudioMaxDuration
 
-    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task):
+    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad):
         try:
             source, sourceName = self.getSource(urlData, uploadFile, microphoneData)
             
@@ -66,7 +68,14 @@ class UI:
                     model_cache[selectedModel] = model
 
                 # The results
-                result = model.transcribe(source, language=selectedLanguage, task=task)
+                if (vad == 'silero-vad'):
+                    # Use Silero VAD
+                    if (self.vad_model is None):
+                        self.vad_model = VadTranscription()
+                    result = self.vad_model.transcribe(source, lambda audio : model.transcribe(audio, language=selectedLanguage, task=task))
+                else:
+                    # Default VAD
+                    result = model.transcribe(source, language=selectedLanguage, task=task)
 
                 text = result["text"]
 
@@ -154,7 +163,8 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "
     ui_description += " as well as speech translation and language identification. "
 
-    ui_description += "\n\n" + "Note: You can upload more audio (and even video) types by changing to All Files (*.*) in the file selector."
+    ui_description += "\n\n" + "Note: You can upload more audio (and even video) types by changing to All Files (*.*) in the file selector. For longer audio files (>10 minutes), "
+    ui_description += "it is recommended that you select Silero VAD (Voice Activity Detector) in the VAD option."
 
     if inputAudioMaxDuration > 0:
         ui_description += "\n\n" + "Max audio file length: " + str(inputAudioMaxDuration) + " s"
@@ -166,6 +176,7 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
         gr.Audio(source="upload", type="filepath", label="Upload Audio"), 
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
+        gr.Dropdown(choices=["none", "silero-vad"], label="VAD"),
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
