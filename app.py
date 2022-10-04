@@ -15,7 +15,7 @@ import gradio as gr
 from download import ExceededMaximumDuration, downloadUrl
 
 from utils import slugify, write_srt, write_vtt
-from vad import VadTranscription
+from vad import VadPeriodicTranscription, VadSileroTranscription
 
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
@@ -67,15 +67,23 @@ class UI:
                     model = whisper.load_model(selectedModel)
                     model_cache[selectedModel] = model
 
+                # Callable for processing an audio file
+                whisperCallable = lambda audio : model.transcribe(audio, language=selectedLanguage, task=task)
+
                 # The results
                 if (vad == 'silero-vad'):
                     # Use Silero VAD
                     if (self.vad_model is None):
-                        self.vad_model = VadTranscription()
-                    result = self.vad_model.transcribe(source, lambda audio : model.transcribe(audio, language=selectedLanguage, task=task))
+                        self.vad_model = VadSileroTranscription()
+                    result = self.vad_model.transcribe(source, whisperCallable)
+                elif (vad == 'periodic-vad'):
+                    # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
+                    # it may create a break in the middle of a sentence, causing some artifacts.
+                    periodic_vad = VadPeriodicTranscription(periodic_duration=60 * 5)
+                    result = periodic_vad.transcribe(source, whisperCallable)
                 else:
                     # Default VAD
-                    result = model.transcribe(source, language=selectedLanguage, task=task)
+                    result = whisperCallable(source)
 
                 text = result["text"]
 
@@ -176,7 +184,7 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
         gr.Audio(source="upload", type="filepath", label="Upload Audio"), 
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
-        gr.Dropdown(choices=["none", "silero-vad"], label="VAD"),
+        gr.Dropdown(choices=["none", "silero-vad", "periodic-vad"], label="VAD"),
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
