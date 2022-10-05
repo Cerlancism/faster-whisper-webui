@@ -20,8 +20,12 @@ import numpy as np
 from utils import format_timestamp
 
 # Defaults for Silero
+# TODO: Make these configurable?
+
 SPEECH_TRESHOLD = 0.3
 MAX_SILENT_PERIOD = 10 # seconds
+MAX_MERGE_SIZE = 150 # Do not create segments larger than 2.5 minutes
+
 SEGMENT_PADDING_LEFT = 1 # Start detected text segment early
 SEGMENT_PADDING_RIGHT = 3 # End detected segments late
 
@@ -29,11 +33,12 @@ SEGMENT_PADDING_RIGHT = 3 # End detected segments late
 TRANSCRIBE_NON_SPEECH = False
 
 class AbstractTranscription(ABC):
-    def __init__(self, segment_padding_left: int = None, segment_padding_right = None, max_silent_period: int = None, transcribe_non_speech: bool = False):
+    def __init__(self, segment_padding_left: int = None, segment_padding_right = None, max_silent_period: int = None, max_merge_size: int = None, transcribe_non_speech: bool = False):
         self.sampling_rate = 16000
         self.segment_padding_left = segment_padding_left
         self.segment_padding_right = segment_padding_right
         self.max_silent_period = max_silent_period
+        self.max_merge_size = max_merge_size
         self.transcribe_non_speech = transcribe_non_speech
 
     def get_audio_segment(self, str, start_time: str = None, duration: str = None):
@@ -76,7 +81,7 @@ class AbstractTranscription(ABC):
         seconds_timestamps = self.get_transcribe_timestamps(audio)
 
         padded = self.pad_timestamps(seconds_timestamps, self.segment_padding_left, self.segment_padding_right)
-        merged = self.merge_timestamps(padded, self.max_silent_period)
+        merged = self.merge_timestamps(padded, self.max_silent_period, self.max_merge_size)
 
         print("Timestamps:")
         pprint(merged)
@@ -188,8 +193,8 @@ class AbstractTranscription(ABC):
 
         return result
 
-    def merge_timestamps(self, timestamps: List[Dict[str, Any]], max_distance: float):
-        if max_distance is None:
+    def merge_timestamps(self, timestamps: List[Dict[str, Any]], max_merge_gap: float, max_merge_size: float):
+        if max_merge_gap is None:
             return timestamps
 
         result = []
@@ -202,8 +207,9 @@ class AbstractTranscription(ABC):
 
             # Get distance to the previous entry
             distance = entry['start'] - current_entry['end']
+            current_entry_size = current_entry['end'] - current_entry['start']
 
-            if distance <= max_distance:
+            if distance <= max_merge_gap and (max_merge_size is None or current_entry_size <= max_merge_size):
                 # Merge
                 current_entry['end'] = entry['end']
             else:
@@ -231,8 +237,11 @@ class AbstractTranscription(ABC):
         return result
 
 class VadSileroTranscription(AbstractTranscription):
-    def __init__(self, transcribe_non_speech: bool = False, copy = None):
-        super().__init__(SEGMENT_PADDING_LEFT, SEGMENT_PADDING_RIGHT, MAX_SILENT_PERIOD, transcribe_non_speech)
+    def __init__(self, segment_padding_left=SEGMENT_PADDING_LEFT, segment_padding_right=SEGMENT_PADDING_RIGHT, 
+                 max_silent_period=MAX_SILENT_PERIOD, max_merge_size=MAX_MERGE_SIZE, transcribe_non_speech: bool = False, 
+                 copy = None):
+        super().__init__(segment_padding_left=segment_padding_left, segment_padding_right=segment_padding_right, 
+                         max_silent_period=max_silent_period, max_merge_size=max_merge_size, transcribe_non_speech=transcribe_non_speech)
 
         if copy:
             self.model = copy.model

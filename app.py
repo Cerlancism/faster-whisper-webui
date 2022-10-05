@@ -53,7 +53,7 @@ class UI:
         self.vad_model = None
         self.inputAudioMaxDuration = inputAudioMaxDuration
 
-    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad):
+    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize):
         try:
             source, sourceName = self.getSource(urlData, uploadFile, microphoneData)
             
@@ -74,19 +74,23 @@ class UI:
                 if (vad == 'silero-vad'):
                     # Use Silero VAD and include gaps
                     if (self.vad_model is None):
-                        self.vad_model = VadSileroTranscription(transcribe_non_speech= True)
-                    result = self.vad_model.transcribe(source, whisperCallable)
+                        self.vad_model = VadSileroTranscription()
+
+                    process_gaps = VadSileroTranscription(transcribe_non_speech = True, 
+                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, copy=self.vad_model)
+                    result = process_gaps.transcribe(source, whisperCallable)
                 elif (vad == 'silero-vad-skip-gaps'):
                     # Use Silero VAD 
                     if (self.vad_model is None):
-                        self.vad_model = VadSileroTranscription(transcribe_non_speech= True)
+                        self.vad_model = VadSileroTranscription()
                         
-                    skip_gaps = VadSileroTranscription(transcribe_non_speech = False, copy=self.vad_model)
+                    skip_gaps = VadSileroTranscription(transcribe_non_speech = False, 
+                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, copy=self.vad_model)
                     result = skip_gaps.transcribe(source, whisperCallable)
                 elif (vad == 'periodic-vad'):
                     # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
                     # it may create a break in the middle of a sentence, causing some artifacts.
-                    periodic_vad = VadPeriodicTranscription(periodic_duration=60 * 5)
+                    periodic_vad = VadPeriodicTranscription(periodic_duration=vadMaxMergeSize)
                     result = periodic_vad.transcribe(source, whisperCallable)
                 else:
                     # Default VAD
@@ -178,13 +182,14 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "
     ui_description += " as well as speech translation and language identification. "
 
-    ui_description += "\n\n" + "Note: You can upload more audio (and even video) types by changing to All Files (*.*) in the file selector. For longer audio files (>10 minutes), "
-    ui_description += "it is recommended that you select Silero VAD (Voice Activity Detector) in the VAD option."
+    ui_description += "\n\n\n\nFor longer audio files (>10 minutes), it is recommended that you select Silero VAD (Voice Activity Detector) in the VAD option."
 
     if inputAudioMaxDuration > 0:
         ui_description += "\n\n" + "Max audio file length: " + str(inputAudioMaxDuration) + " s"
 
-    demo = gr.Interface(fn=ui.transcribeFile, description=ui_description, inputs=[
+    ui_article = "Read the [documentation her](https://huggingface.co/spaces/aadnk/whisper-webui/blob/main/docs/options.md)"
+
+    demo = gr.Interface(fn=ui.transcribeFile, description=ui_description, article=ui_article, inputs=[
         gr.Dropdown(choices=["tiny", "base", "small", "medium", "large"], value="medium", label="Model"),
         gr.Dropdown(choices=sorted(LANGUAGES), label="Language"),
         gr.Text(label="URL (YouTube, etc.)"),
@@ -192,6 +197,8 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
         gr.Dropdown(choices=["none", "silero-vad", "silero-vad-skip-gaps", "periodic-vad"], label="VAD"),
+        gr.Number(label="VAD - Merge Window (s)", precision=0, value=10),
+        gr.Number(label="VAD - Max Merge Size (s)", precision=0, value=150)
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
