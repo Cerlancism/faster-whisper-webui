@@ -1,9 +1,17 @@
 from abc import ABC, abstractmethod
 from collections import Counter
 from dis import dis
-from typing import Any, Callable, Iterator, List, Dict, Union
+from typing import Any, Iterator, List, Dict
 
 from pprint import pprint
+
+# Workaround for https://github.com/tensorflow/tensorflow/issues/48797
+try:
+    import tensorflow as tf
+except ModuleNotFoundError:
+    # Error handling
+    pass
+
 import torch
 
 import ffmpeg
@@ -95,7 +103,7 @@ class AbstractTranscription(ABC):
 
             segment_duration = segment_end - segment_start
 
-            segment_audio = self.get_audio_segment(audio, start_time = str(segment_start) + "s", duration = str(segment_duration) + "s")
+            segment_audio = self.get_audio_segment(audio, start_time = str(segment_start), duration = str(segment_duration))
 
             print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", segment_duration, "gap: ", segment_gap)
             if segment_gap:
