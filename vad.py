@@ -32,6 +32,9 @@ SEGMENT_PADDING_RIGHT = 3 # End detected segments late
 # Whether to attempt to transcribe non-speech
 TRANSCRIBE_NON_SPEECH = False
 
+# Minimum size of segments to process
+MIN_SEGMENT_DURATION = 1
+
 class AbstractTranscription(ABC):
     def __init__(self, segment_padding_left: int = None, segment_padding_right = None, max_silent_period: int = None, max_merge_size: int = None, transcribe_non_speech: bool = False):
         self.sampling_rate = 16000
@@ -107,6 +110,9 @@ class AbstractTranscription(ABC):
             segment_gap = segment.get('gap', False)
 
             segment_duration = segment_end - segment_start
+
+            if segment_duration < MIN_SEGMENT_DURATION:
+                continue;
 
             segment_audio = self.get_audio_segment(audio, start_time = str(segment_start), duration = str(segment_duration))
 
