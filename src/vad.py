@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import Counter
 from dis import dis
+import re
 from typing import Any, Iterator, List, Dict
 
 from pprint import pprint
@@ -27,7 +28,7 @@ MAX_SILENT_PERIOD = 10 # seconds
 MAX_MERGE_SIZE = 150 # Do not create segments larger than 2.5 minutes
 
 SEGMENT_PADDING_LEFT = 1 # Start detected text segment early
-SEGMENT_PADDING_RIGHT = 3 # End detected segments late
+SEGMENT_PADDING_RIGHT = 1 # End detected segments late
 
 # Whether to attempt to transcribe non-speech
 TRANSCRIBE_NON_SPEECH = False
@@ -91,7 +92,9 @@ class AbstractTranscription(ABC):
 
         if self.transcribe_non_speech:
             max_audio_duration = float(ffmpeg.probe(audio)["format"]["duration"])
-            merged = self.include_gaps(merged, min_gap_length=5, total_duration=max_audio_duration)
+
+            # Expand segments to include the gaps between them
+            merged = self.expand_gaps(merged, total_duration=max_audio_duration)
 
             print("Transcribing non-speech:")
             pprint(merged)
@@ -107,7 +110,7 @@ class AbstractTranscription(ABC):
         for segment in merged:
             segment_start = segment['start']
             segment_end = segment['end']
-            segment_gap = segment.get('gap', False)
+            segment_expand_amount = segment.get('expand_amount', 0)
 
             segment_duration = segment_end - segment_start
 
@@ -116,12 +119,9 @@ class AbstractTranscription(ABC):
 
             segment_audio = self.get_audio_segment(audio, start_time = str(segment_start), duration = str(segment_duration))
 
-            print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", segment_duration, "gap: ", segment_gap)
-            if segment_gap:
-                # TODO: Use different parameters for these segments, as they are less likely to contain speech
-                segment_result = whisperCallable(segment_audio)
-            else:
-                segment_result = whisperCallable(segment_audio)
+            print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", segment_duration, "expanded: ", segment_expand_amount)
+            segment_result = whisperCallable(segment_audio)
+
             adjusted_segments = self.adjust_whisper_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
             # Append to output
@@ -162,6 +162,44 @@ class AbstractTranscription(ABC):
 
         return result
 
+    # Expand the end time of each segment to the start of the next segment
+    def expand_gaps(self, segments: List[Dict[str, Any]], total_duration: float):
+        result = []
+
+        if len(segments) == 0:
+            return result
+
+        # Add gap at the beginning if needed
+        if (segments[0]['start'] > 0):
+            result.append({ 'start': 0, 'end': segments[0]['start'], 'gap': True } )
+
+        for i in range(len(segments) - 1):
+            current_segment = segments[i]
+            next_segment = segments[i + 1]
+
+            delta = next_segment['start'] - current_segment['end']
+
+            # Expand if the gap actually exists
+            if (delta >= 0):
+                current_segment = current_segment.copy()
+                current_segment['expand_amount'] = delta
+                current_segment['end'] = next_segment['start']
+            
+            result.append(current_segment)
+
+        last_segment = result[-1]
+
+        # Also include total duration if specified
+        if (total_duration is not None):
+            last_segment = result[-1]
+
+            if (last_segment['end'] < total_duration):
+                last_segment = last_segment.copy()
+                last_segment['end'] = total_duration
+                result[-1] = last_segment
+
+        return result
+
     def adjust_whisper_timestamp(self, segments: Iterator[dict], adjust_seconds: float, max_source_time: float = None):
         result = []
 
@@ -184,16 +222,26 @@ class AbstractTranscription(ABC):
         return result
 
     def pad_timestamps(self, timestamps: List[Dict[str, Any]], padding_left: float, padding_right: float):
+        if (padding_left == 0 and padding_right == 0):
+            return timestamps
         result = []
 
-        for entry in timestamps:
-            segment_start = entry['start']
-            segment_end = entry['end']
+        for i in range(len(timestamps)):
+            prev_entry = timestamps[i - 1] if i > 0 else None
+            curr_entry = timestamps[i]
+            next_entry = timestamps[i + 1] if i < len(timestamps) - 1 else None
+
+            segment_start = curr_entry['start']
+            segment_end = curr_entry['end']
 
             if padding_left is not None:
-                segment_start = max(0, segment_start - padding_left)
+                segment_start = max(prev_entry['end'] if prev_entry else 0, segment_start - padding_left)
             if padding_right is not None:
                 segment_end = segment_end + padding_right
+
+                # Do not pad past the next segment
+                if (next_entry is not None):
+                    segment_end = min(next_entry['start'], segment_end)
 
             result.append({ 'start': segment_start, 'end': segment_end })
 
