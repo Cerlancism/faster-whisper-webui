@@ -17,7 +17,7 @@ import torch
 import ffmpeg
 import numpy as np
 
-from utils import format_timestamp
+from src.utils import format_timestamp
 
 # Defaults for Silero
 # TODO: Make these configurable?

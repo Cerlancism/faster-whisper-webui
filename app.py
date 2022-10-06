@@ -12,10 +12,10 @@ import ffmpeg
 
 # UI
 import gradio as gr
-from download import ExceededMaximumDuration, downloadUrl
 
-from utils import slugify, write_srt, write_vtt
-from vad import VadPeriodicTranscription, VadSileroTranscription
+from src.download import ExceededMaximumDuration, downloadUrl
+from src.utils import slugify, write_srt, write_vtt
+from src.vad import VadPeriodicTranscription, VadSileroTranscription
 
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
