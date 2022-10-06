@@ -1,7 +1,9 @@
 import os 
 
 from tempfile import mkdtemp
+from tkinter import Y
 from yt_dlp import YoutubeDL
+import yt_dlp
 from yt_dlp.postprocessor import PostProcessor
 
 class FilenameCollectorPP(PostProcessor):
@@ -14,6 +16,15 @@ class FilenameCollectorPP(PostProcessor):
         return [], information
 
 def downloadUrl(url: str, maxDuration: int = None):
+    try:
+        return _performDownload(url, maxDuration=maxDuration)
+    except yt_dlp.utils.DownloadError as e:
+        # In case of an OS error, try again with a different output template
+        if e.msg and e.msg.find("[Errno 36] File name too long") >= 0:
+            return _performDownload(url, maxDuration=maxDuration, outputTemplate="%(title).10s %(id)s.%(ext)s")
+        pass
+
+def _performDownload(url: str, maxDuration: int = None, outputTemplate: str = None):
     destinationDirectory = mkdtemp()
 
     ydl_opts = {
@@ -23,6 +34,11 @@ def downloadUrl(url: str, maxDuration: int = None):
             'home': destinationDirectory
         }
     }
+
+    # Add output template if specified
+    if outputTemplate:
+        ydl_opts['outtmpl'] = outputTemplate
+
     filename_collector = FilenameCollectorPP()
 
     with YoutubeDL(ydl_opts) as ydl:
@@ -43,7 +59,6 @@ def downloadUrl(url: str, maxDuration: int = None):
     print("Downloaded " + result)
 
     return result 
-
 
 class ExceededMaximumDuration(Exception):
     def __init__(self, videoDuration, maxDuration, message):
