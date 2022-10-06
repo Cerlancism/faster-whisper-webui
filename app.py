@@ -197,7 +197,7 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
         gr.Dropdown(choices=["none", "silero-vad", "silero-vad-skip-gaps", "periodic-vad"], label="VAD"),
-        gr.Number(label="VAD - Merge Window (s)", precision=0, value=10),
+        gr.Number(label="VAD - Merge Window (s)", precision=0, value=5),
         gr.Number(label="VAD - Max Merge Size (s)", precision=0, value=150)
     ], outputs=[
         gr.File(label="Download"),
