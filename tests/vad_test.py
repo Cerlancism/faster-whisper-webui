@@ -5,7 +5,7 @@ import sys
 
 sys.path.append('../whisper-webui')
 
-from vad import AbstractTranscription, VadSileroTranscription
+from src.vad import AbstractTranscription, VadSileroTranscription
 
 class TestVad(unittest.TestCase):
     def __init__(self, *args, **kwargs):
@@ -24,8 +24,8 @@ class TestVad(unittest.TestCase):
         ])
 
         self.assertListEqual(result['segments'],
-            [{'end': 50.0, 'start': 40.0, 'text': 'Hello world'},
-            {'end': 120.0, 'start': 110.0, 'text': 'Hello world'}]
+            [{'end': 50.0, 'start': 40.0, 'text': 'Hello world '},
+            {'end': 120.0, 'start': 110.0, 'text': 'Hello world '}]
         )
 
     def transcribe_segments(self, segment):
