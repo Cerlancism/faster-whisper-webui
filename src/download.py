@@ -1,5 +1,4 @@
 from tempfile import mkdtemp
-from tkinter import Y
 from yt_dlp import YoutubeDL
 
 import yt_dlp

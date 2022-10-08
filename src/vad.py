@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
 from collections import Counter
-from dis import dis
-import re
 from typing import Any, Iterator, List, Dict
 
 from pprint import pprint

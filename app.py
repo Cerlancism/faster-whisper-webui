@@ -1,4 +1,3 @@
-import re
 from typing import Iterator
 
 from io import StringIO
