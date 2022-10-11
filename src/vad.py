@@ -224,10 +224,11 @@ class AbstractTranscription(ABC):
     def pad_timestamps(self, timestamps: List[Dict[str, Any]], padding_left: float, padding_right: float):
         if (padding_left == 0 and padding_right == 0):
             return timestamps
+        
         result = []
+        prev_entry = None
 
         for i in range(len(timestamps)):
-            prev_entry = timestamps[i - 1] if i > 0 else None
             curr_entry = timestamps[i]
             next_entry = timestamps[i + 1] if i < len(timestamps) - 1 else None
 
@@ -243,7 +244,9 @@ class AbstractTranscription(ABC):
                 if (next_entry is not None):
                     segment_end = min(next_entry['start'], segment_end)
 
-            result.append({ 'start': segment_start, 'end': segment_end })
+            new_entry = { 'start': segment_start, 'end': segment_end }
+            prev_entry = new_entry
+            result.append(new_entry)
 
         return result
 
@@ -321,7 +324,7 @@ class VadSileroTranscription(AbstractTranscription):
             seconds_timestamps = self.multiply_timestamps(sample_timestamps, factor=1 / self.sampling_rate) 
             adjusted = self.adjust_timestamp(seconds_timestamps, adjust_seconds=chunk_start, max_source_time=chunk_start + chunk_duration)
 
-            pprint(adjusted)
+            #pprint(adjusted)
 
             result.extend(adjusted)
             chunk_start += chunk_duration
