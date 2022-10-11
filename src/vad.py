@@ -34,6 +34,8 @@ TRANSCRIBE_NON_SPEECH = False
 # Minimum size of segments to process
 MIN_SEGMENT_DURATION = 1
 
+VAD_MAX_PROCESSING_CHUNK = 60 * 60 # 60 minutes of audio
+
 class AbstractTranscription(ABC):
     def __init__(self, segment_padding_left: int = None, segment_padding_right = None, max_silent_period: int = None, max_merge_size: int = None, transcribe_non_speech: bool = False):
         self.sampling_rate = 16000
@@ -89,7 +91,7 @@ class AbstractTranscription(ABC):
         pprint(merged)
 
         if self.transcribe_non_speech:
-            max_audio_duration = float(ffmpeg.probe(audio)["format"]["duration"])
+            max_audio_duration = get_audio_duration(audio)
 
             # Expand segments to include the gaps between them
             merged = self.expand_gaps(merged, total_duration=max_audio_duration)
@@ -120,7 +122,7 @@ class AbstractTranscription(ABC):
             print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", segment_duration, "expanded: ", segment_expand_amount)
             segment_result = whisperCallable(segment_audio)
 
-            adjusted_segments = self.adjust_whisper_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
+            adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
             # Append to output
             result['text'] += segment_result['text']
@@ -198,7 +200,7 @@ class AbstractTranscription(ABC):
 
         return result
 
-    def adjust_whisper_timestamp(self, segments: Iterator[dict], adjust_seconds: float, max_source_time: float = None):
+    def adjust_timestamp(self, segments: Iterator[dict], adjust_seconds: float, max_source_time: float = None):
         result = []
 
         for segment in segments:
@@ -303,10 +305,26 @@ class VadSileroTranscription(AbstractTranscription):
             (self.get_speech_timestamps, _, _, _, _) = utils
 
     def get_transcribe_timestamps(self, audio: str):
-        wav = self.get_audio_segment(audio)
+        audio_duration = get_audio_duration(audio)
+        result = []
 
-        sample_timestamps = self.get_speech_timestamps(wav, self.model, sampling_rate=self.sampling_rate, threshold=SPEECH_TRESHOLD)
-        seconds_timestamps = self.multiply_timestamps(sample_timestamps, factor=1 / self.sampling_rate) 
+        # Divide procesisng of audio into chunks
+        chunk_start = 0.0
+
+        while (chunk_start < audio_duration):
+            chunk_duration = min(audio_duration - chunk_start, VAD_MAX_PROCESSING_CHUNK)
+
+            print("Processing VAD in chunk from {} to {}".format(format_timestamp(chunk_start), format_timestamp(chunk_start + chunk_duration)))
+            wav = self.get_audio_segment(audio, str(chunk_start), str(chunk_duration))
+
+            sample_timestamps = self.get_speech_timestamps(wav, self.model, sampling_rate=self.sampling_rate, threshold=SPEECH_TRESHOLD)
+            seconds_timestamps = self.multiply_timestamps(sample_timestamps, factor=1 / self.sampling_rate) 
+            adjusted = self.adjust_timestamp(seconds_timestamps, adjust_seconds=chunk_start, max_source_time=chunk_start + chunk_duration)
+
+            pprint(adjusted)
+
+            result.extend(adjusted)
+            chunk_start += chunk_duration
 
         return seconds_timestamps
 
@@ -318,7 +336,7 @@ class VadPeriodicTranscription(AbstractTranscription):
 
     def get_transcribe_timestamps(self, audio: str):
         # Get duration in seconds
-        audio_duration = float(ffmpeg.probe(audio)["format"]["duration"])
+        audio_duration = get_audio_duration(audio)
         result = []
 
         # Generate a timestamp every N seconds
@@ -335,6 +353,9 @@ class VadPeriodicTranscription(AbstractTranscription):
             start_timestamp = end_timestamp
 
         return result
+
+def get_audio_duration(file: str):
+    return float(ffmpeg.probe(file)["format"]["duration"])
 
 def load_audio(file: str, sample_rate: int = 16000, 
                start_time: str = None, duration: str = None):
