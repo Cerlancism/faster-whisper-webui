@@ -326,7 +326,7 @@ class VadSileroTranscription(AbstractTranscription):
             result.extend(adjusted)
             chunk_start += chunk_duration
 
-        return seconds_timestamps
+        return result
 
 # A very simple VAD that just marks every N seconds as speech
 class VadPeriodicTranscription(AbstractTranscription):
