@@ -52,7 +52,7 @@ class UI:
         self.vad_model = None
         self.inputAudioMaxDuration = inputAudioMaxDuration
 
-    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize):
+    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding):
         try:
             source, sourceName = self.getSource(urlData, uploadFile, microphoneData)
             
@@ -76,7 +76,8 @@ class UI:
                         self.vad_model = VadSileroTranscription()
 
                     process_gaps = VadSileroTranscription(transcribe_non_speech = True, 
-                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, copy=self.vad_model)
+                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
+                                    segment_padding_left=vadPadding, segment_padding_right=vadPadding, copy=self.vad_model)
                     result = process_gaps.transcribe(source, whisperCallable)
                 elif (vad == 'silero-vad-skip-gaps'):
                     # Use Silero VAD 
@@ -84,7 +85,8 @@ class UI:
                         self.vad_model = VadSileroTranscription()
                         
                     skip_gaps = VadSileroTranscription(transcribe_non_speech = False, 
-                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, copy=self.vad_model)
+                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
+                                    segment_padding_left=vadPadding, segment_padding_right=vadPadding, copy=self.vad_model)
                     result = skip_gaps.transcribe(source, whisperCallable)
                 elif (vad == 'periodic-vad'):
                     # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
@@ -197,7 +199,8 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
         gr.Dropdown(choices=["none", "silero-vad", "silero-vad-skip-gaps", "periodic-vad"], label="VAD"),
         gr.Number(label="VAD - Merge Window (s)", precision=0, value=5),
-        gr.Number(label="VAD - Max Merge Size (s)", precision=0, value=150)
+        gr.Number(label="VAD - Max Merge Size (s)", precision=0, value=150),
+        gr.Number(label="VAD - Padding (s)", precision=None, value=1)
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 

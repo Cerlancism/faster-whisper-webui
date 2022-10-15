@@ -25,9 +25,9 @@ SPEECH_TRESHOLD = 0.3
 MAX_SILENT_PERIOD = 10 # seconds
 MAX_MERGE_SIZE = 150 # Do not create segments larger than 2.5 minutes
 
-# Segment padding is disabled for now
-SEGMENT_PADDING_LEFT = 0 # Start detected text segment early
-SEGMENT_PADDING_RIGHT = 0 # End detected segments late
+# Default segment padding
+SEGMENT_PADDING_LEFT = 1 # Start detected text segment early
+SEGMENT_PADDING_RIGHT = 1 # End detected segments late
 
 # Whether to attempt to transcribe non-speech
 TRANSCRIBE_NON_SPEECH = False
@@ -38,7 +38,7 @@ MIN_SEGMENT_DURATION = 1
 VAD_MAX_PROCESSING_CHUNK = 60 * 60 # 60 minutes of audio
 
 class AbstractTranscription(ABC):
-    def __init__(self, segment_padding_left: int = None, segment_padding_right = None, max_silent_period: int = None, max_merge_size: int = None, transcribe_non_speech: bool = False):
+    def __init__(self, segment_padding_left: float = None, segment_padding_right = None, max_silent_period: float = None, max_merge_size: float = None, transcribe_non_speech: bool = False):
         self.sampling_rate = 16000
         self.segment_padding_left = segment_padding_left
         self.segment_padding_right = segment_padding_right
@@ -334,7 +334,7 @@ class VadSileroTranscription(AbstractTranscription):
 
 # A very simple VAD that just marks every N seconds as speech
 class VadPeriodicTranscription(AbstractTranscription):
-    def __init__(self, periodic_duration: int):
+    def __init__(self, periodic_duration: float):
         super().__init__()
         self.periodic_duration = periodic_duration
 
