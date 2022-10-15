@@ -12,7 +12,7 @@ import ffmpeg
 # UI
 import gradio as gr
 
-from src.download import ExceededMaximumDuration, downloadUrl
+from src.download import ExceededMaximumDuration, download_url
 from src.utils import slugify, write_srt, write_vtt
 from src.vad import VadPeriodicTranscription, VadSileroTranscription
 
@@ -45,26 +45,27 @@ LANGUAGES = [
  "Hausa", "Bashkir", "Javanese", "Sundanese"
 ]
 
-model_cache = dict()
+class WhisperTranscriber:
+    def __init__(self, inputAudioMaxDuration: float = DEFAULT_INPUT_AUDIO_MAX_DURATION, deleteUploadedFiles: bool = DELETE_UPLOADED_FILES):
+        self.model_cache = dict()
 
-class UI:
-    def __init__(self, inputAudioMaxDuration):
         self.vad_model = None
         self.inputAudioMaxDuration = inputAudioMaxDuration
+        self.deleteUploadedFiles = deleteUploadedFiles
 
-    def transcribeFile(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding):
+    def transcribe_file(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding):
         try:
-            source, sourceName = self.getSource(urlData, uploadFile, microphoneData)
+            source, sourceName = self.__get_source(urlData, uploadFile, microphoneData)
             
             try:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                model = model_cache.get(selectedModel, None)
+                model = self.model_cache.get(selectedModel, None)
                 
                 if not model:
                     model = whisper.load_model(selectedModel)
-                    model_cache[selectedModel] = model
+                    self.model_cache[selectedModel] = model
 
                 # Callable for processing an audio file
                 whisperCallable = lambda audio : model.transcribe(audio, language=selectedLanguage, task=task)
@@ -100,36 +101,39 @@ class UI:
                 text = result["text"]
 
                 language = result["language"]
-                languageMaxLineWidth = getMaxLineWidth(language)
+                languageMaxLineWidth = self.__get_max_line_width(language)
 
                 print("Max line width " + str(languageMaxLineWidth))
-                vtt = getSubs(result["segments"], "vtt", languageMaxLineWidth)
-                srt = getSubs(result["segments"], "srt", languageMaxLineWidth)
+                vtt = self.__get_subs(result["segments"], "vtt", languageMaxLineWidth)
+                srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth)
 
                 # Files that can be downloaded
                 downloadDirectory = tempfile.mkdtemp()
                 filePrefix = slugify(sourceName, allow_unicode=True)
 
                 download = []
-                download.append(createFile(srt, downloadDirectory, filePrefix + "-subs.srt"));
-                download.append(createFile(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
-                download.append(createFile(text, downloadDirectory, filePrefix + "-transcript.txt"));
+                download.append(self.__create_file(srt, downloadDirectory, filePrefix + "-subs.srt"));
+                download.append(self.__create_file(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
+                download.append(self.__create_file(text, downloadDirectory, filePrefix + "-transcript.txt"));
 
                 return download, text, vtt
 
             finally:
                 # Cleanup source
-                if DELETE_UPLOADED_FILES:
+                if self.deleteUploadedFiles:
                     print("Deleting source file " + source)
                     os.remove(source)
         
         except ExceededMaximumDuration as e:
             return [], ("[ERROR]: Maximum remote video length is " + str(e.maxDuration) + "s, file was " + str(e.videoDuration) + "s"), "[ERROR]"
 
-    def getSource(self, urlData, uploadFile, microphoneData):
+    def clear_cache(self):
+        self.model_cache = dict()
+
+    def __get_source(self, urlData, uploadFile, microphoneData):
         if urlData:
             # Download from YouTube
-            source = downloadUrl(urlData, self.inputAudioMaxDuration)
+            source = download_url(urlData, self.inputAudioMaxDuration)
         else:
             # File input
             source = uploadFile if uploadFile is not None else microphoneData
@@ -146,38 +150,38 @@ class UI:
 
         return source, sourceName
 
-def getMaxLineWidth(language: str) -> int:
-    if (language and language.lower() in ["japanese", "ja", "chinese", "zh"]):
-        # Chinese characters and kana are wider, so limit line length to 40 characters
-        return 40
-    else:
-        # TODO: Add more languages
-        # 80 latin characters should fit on a 1080p/720p screen
-        return 80
+    def __get_max_line_width(self, language: str) -> int:
+        if (language and language.lower() in ["japanese", "ja", "chinese", "zh"]):
+            # Chinese characters and kana are wider, so limit line length to 40 characters
+            return 40
+        else:
+            # TODO: Add more languages
+            # 80 latin characters should fit on a 1080p/720p screen
+            return 80
 
-def createFile(text: str, directory: str, fileName: str) -> str:
-    # Write the text to a file
-    with open(os.path.join(directory, fileName), 'w+', encoding="utf-8") as file:
-        file.write(text)
+    def __get_subs(self, segments: Iterator[dict], format: str, maxLineWidth: int) -> str:
+        segmentStream = StringIO()
 
-    return file.name
+        if format == 'vtt':
+            write_vtt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
+        elif format == 'srt':
+            write_srt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
+        else:
+            raise Exception("Unknown format " + format)
 
-def getSubs(segments: Iterator[dict], format: str, maxLineWidth: int) -> str:
-    segmentStream = StringIO()
+        segmentStream.seek(0)
+        return segmentStream.read()
 
-    if format == 'vtt':
-        write_vtt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
-    elif format == 'srt':
-        write_srt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
-    else:
-        raise Exception("Unknown format " + format)
+    def __create_file(self, text: str, directory: str, fileName: str) -> str:
+        # Write the text to a file
+        with open(os.path.join(directory, fileName), 'w+', encoding="utf-8") as file:
+            file.write(text)
 
-    segmentStream.seek(0)
-    return segmentStream.read()
-    
+        return file.name
 
-def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
-    ui = UI(inputAudioMaxDuration)
+
+def create_ui(inputAudioMaxDuration, share=False, server_name: str = None):
+    ui = WhisperTranscriber(inputAudioMaxDuration)
 
     ui_description = "Whisper is a general-purpose speech recognition model. It is trained on a large dataset of diverse " 
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "
@@ -188,9 +192,9 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
     if inputAudioMaxDuration > 0:
         ui_description += "\n\n" + "Max audio file length: " + str(inputAudioMaxDuration) + " s"
 
-    ui_article = "Read the [documentation her](https://huggingface.co/spaces/aadnk/whisper-webui/blob/main/docs/options.md)"
+    ui_article = "Read the [documentation here](https://huggingface.co/spaces/aadnk/whisper-webui/blob/main/docs/options.md)"
 
-    demo = gr.Interface(fn=ui.transcribeFile, description=ui_description, article=ui_article, inputs=[
+    demo = gr.Interface(fn=ui.transcribe_file, description=ui_description, article=ui_article, inputs=[
         gr.Dropdown(choices=["tiny", "base", "small", "medium", "large"], value="medium", label="Model"),
         gr.Dropdown(choices=sorted(LANGUAGES), label="Language"),
         gr.Text(label="URL (YouTube, etc.)"),
@@ -210,4 +214,4 @@ def createUi(inputAudioMaxDuration, share=False, server_name: str = None):
     demo.launch(share=share, server_name=server_name)   
 
 if __name__ == '__main__':
-    createUi(DEFAULT_INPUT_AUDIO_MAX_DURATION)
+    create_ui(DEFAULT_INPUT_AUDIO_MAX_DURATION)

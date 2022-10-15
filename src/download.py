@@ -13,16 +13,16 @@ class FilenameCollectorPP(PostProcessor):
         self.filenames.append(information["filepath"])
         return [], information
 
-def downloadUrl(url: str, maxDuration: int = None):
+def download_url(url: str, maxDuration: int = None):
     try:
-        return _performDownload(url, maxDuration=maxDuration)
+        return _perform_download(url, maxDuration=maxDuration)
     except yt_dlp.utils.DownloadError as e:
         # In case of an OS error, try again with a different output template
         if e.msg and e.msg.find("[Errno 36] File name too long") >= 0:
-            return _performDownload(url, maxDuration=maxDuration, outputTemplate="%(title).10s %(id)s.%(ext)s")
+            return _perform_download(url, maxDuration=maxDuration, outputTemplate="%(title).10s %(id)s.%(ext)s")
         pass
 
-def _performDownload(url: str, maxDuration: int = None, outputTemplate: str = None):
+def _perform_download(url: str, maxDuration: int = None, outputTemplate: str = None):
     destinationDirectory = mkdtemp()
 
     ydl_opts = {
