@@ -24,6 +24,19 @@ Finally, run the full version (no audio length restrictions) of the app:
 python app-full.py
 ```
 
+You can also run the CLI interface, which is similar to Whisper's own CLI but also supports the following additional arguments>
+```
+python cli.py \
+[--vad {none,silero-vad,silero-vad-skip-gaps,periodic-vad}] \
+[--vad_merge_window VAD_MERGE_WINDOW] \
+[--vad_max_merge_size VAD_MAX_MERGE_SIZE] \
+[--vad_padding VAD_PADDING]
+```
+In addition, you may also use URL's in addition to file paths as input.
+```
+python cli.py --model large --vad silero-vad --language Japanese "https://www.youtube.com/watch?v=4cICErqqRSM"
+```
+
 # Docker
 
 To run it in Docker, first install Docker and optionally the NVIDIA Container Toolkit in order to use the GPU. Then 
