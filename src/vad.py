@@ -25,8 +25,9 @@ SPEECH_TRESHOLD = 0.3
 MAX_SILENT_PERIOD = 10 # seconds
 MAX_MERGE_SIZE = 150 # Do not create segments larger than 2.5 minutes
 
-SEGMENT_PADDING_LEFT = 1 # Start detected text segment early
-SEGMENT_PADDING_RIGHT = 1 # End detected segments late
+# Segment padding is disabled for now
+SEGMENT_PADDING_LEFT = 0 # Start detected text segment early
+SEGMENT_PADDING_RIGHT = 0 # End detected segments late
 
 # Whether to attempt to transcribe non-speech
 TRANSCRIBE_NON_SPEECH = False
