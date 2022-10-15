@@ -188,7 +188,9 @@ class AbstractTranscription(ABC):
             
             result.append(current_segment)
 
-        last_segment = result[-1]
+        # Add last segment
+        last_segment = segments[-1]
+        result.append(last_segment)
 
         # Also include total duration if specified
         if (total_duration is not None):

@@ -53,7 +53,7 @@ class WhisperTranscriber:
         self.inputAudioMaxDuration = inputAudioMaxDuration
         self.deleteUploadedFiles = deleteUploadedFiles
 
-    def transcribe_file(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding):
+    def transcribe_webui(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding):
         try:
             source, sourceName = self.__get_source(urlData, uploadFile, microphoneData)
             
@@ -67,54 +67,14 @@ class WhisperTranscriber:
                     model = whisper.load_model(selectedModel)
                     self.model_cache[selectedModel] = model
 
-                # Callable for processing an audio file
-                whisperCallable = lambda audio : model.transcribe(audio, language=selectedLanguage, task=task)
+                # Execute whisper
+                result = self.transcribe_file(model, source, selectedLanguage, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding)
 
-                # The results
-                if (vad == 'silero-vad'):
-                    # Use Silero VAD and include gaps
-                    if (self.vad_model is None):
-                        self.vad_model = VadSileroTranscription()
-
-                    process_gaps = VadSileroTranscription(transcribe_non_speech = True, 
-                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
-                                    segment_padding_left=vadPadding, segment_padding_right=vadPadding, copy=self.vad_model)
-                    result = process_gaps.transcribe(source, whisperCallable)
-                elif (vad == 'silero-vad-skip-gaps'):
-                    # Use Silero VAD 
-                    if (self.vad_model is None):
-                        self.vad_model = VadSileroTranscription()
-                        
-                    skip_gaps = VadSileroTranscription(transcribe_non_speech = False, 
-                                    max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
-                                    segment_padding_left=vadPadding, segment_padding_right=vadPadding, copy=self.vad_model)
-                    result = skip_gaps.transcribe(source, whisperCallable)
-                elif (vad == 'periodic-vad'):
-                    # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
-                    # it may create a break in the middle of a sentence, causing some artifacts.
-                    periodic_vad = VadPeriodicTranscription(periodic_duration=vadMaxMergeSize)
-                    result = periodic_vad.transcribe(source, whisperCallable)
-                else:
-                    # Default VAD
-                    result = whisperCallable(source)
-
-                text = result["text"]
-
-                language = result["language"]
-                languageMaxLineWidth = self.__get_max_line_width(language)
-
-                print("Max line width " + str(languageMaxLineWidth))
-                vtt = self.__get_subs(result["segments"], "vtt", languageMaxLineWidth)
-                srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth)
-
-                # Files that can be downloaded
+                # Write result
                 downloadDirectory = tempfile.mkdtemp()
+                
                 filePrefix = slugify(sourceName, allow_unicode=True)
-
-                download = []
-                download.append(self.__create_file(srt, downloadDirectory, filePrefix + "-subs.srt"));
-                download.append(self.__create_file(vtt, downloadDirectory, filePrefix + "-subs.vtt"));
-                download.append(self.__create_file(text, downloadDirectory, filePrefix + "-transcript.txt"));
+                download, text, vtt = self.write_result(result, filePrefix, downloadDirectory)
 
                 return download, text, vtt
 
@@ -127,13 +87,68 @@ class WhisperTranscriber:
         except ExceededMaximumDuration as e:
             return [], ("[ERROR]: Maximum remote video length is " + str(e.maxDuration) + "s, file was " + str(e.videoDuration) + "s"), "[ERROR]"
 
+    def transcribe_file(self, model: whisper.Whisper, audio_path: str, language: str, task: str = None, vad: str = None, 
+                        vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, **decodeOptions: dict):
+        # Callable for processing an audio file
+        whisperCallable = lambda audio : model.transcribe(audio, language=language, task=task, **decodeOptions)
+
+        # The results
+        if (vad == 'silero-vad'):
+            # Use Silero VAD and include gaps
+            if (self.vad_model is None):
+                self.vad_model = VadSileroTranscription()
+
+            process_gaps = VadSileroTranscription(transcribe_non_speech = True, 
+                            max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
+                            segment_padding_left=vadPadding, segment_padding_right=vadPadding, copy=self.vad_model)
+            result = process_gaps.transcribe(audio_path, whisperCallable)
+        elif (vad == 'silero-vad-skip-gaps'):
+            # Use Silero VAD 
+            if (self.vad_model is None):
+                self.vad_model = VadSileroTranscription()
+                
+            skip_gaps = VadSileroTranscription(transcribe_non_speech = False, 
+                            max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
+                            segment_padding_left=vadPadding, segment_padding_right=vadPadding, copy=self.vad_model)
+            result = skip_gaps.transcribe(audio_path, whisperCallable)
+        elif (vad == 'periodic-vad'):
+            # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
+            # it may create a break in the middle of a sentence, causing some artifacts.
+            periodic_vad = VadPeriodicTranscription(periodic_duration=vadMaxMergeSize)
+            result = periodic_vad.transcribe(audio_path, whisperCallable)
+        else:
+            # Default VAD
+            result = whisperCallable(audio_path)
+
+        return result
+
+    def write_result(self, result: dict, source_name: str, output_dir: str):
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        text = result["text"]
+        language = result["language"]
+        languageMaxLineWidth = self.__get_max_line_width(language)
+
+        print("Max line width " + str(languageMaxLineWidth))
+        vtt = self.__get_subs(result["segments"], "vtt", languageMaxLineWidth)
+        srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth)
+
+        output_files = []
+        output_files.append(self.__create_file(srt, output_dir, source_name + "-subs.srt"));
+        output_files.append(self.__create_file(vtt, output_dir, source_name + "-subs.vtt"));
+        output_files.append(self.__create_file(text, output_dir, source_name + "-transcript.txt"));
+
+        return output_files, text, vtt
+
     def clear_cache(self):
         self.model_cache = dict()
+        self.vad_model = None
 
     def __get_source(self, urlData, uploadFile, microphoneData):
         if urlData:
             # Download from YouTube
-            source = download_url(urlData, self.inputAudioMaxDuration)
+            source = download_url(urlData, self.inputAudioMaxDuration)[0]
         else:
             # File input
             source = uploadFile if uploadFile is not None else microphoneData
@@ -194,7 +209,7 @@ def create_ui(inputAudioMaxDuration, share=False, server_name: str = None):
 
     ui_article = "Read the [documentation here](https://huggingface.co/spaces/aadnk/whisper-webui/blob/main/docs/options.md)"
 
-    demo = gr.Interface(fn=ui.transcribe_file, description=ui_description, article=ui_article, inputs=[
+    demo = gr.Interface(fn=ui.transcribe_webui, description=ui_description, article=ui_article, inputs=[
         gr.Dropdown(choices=["tiny", "base", "small", "medium", "large"], value="medium", label="Model"),
         gr.Dropdown(choices=sorted(LANGUAGES), label="Language"),
         gr.Text(label="URL (YouTube, etc.)"),
