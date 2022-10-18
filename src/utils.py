@@ -56,7 +56,7 @@ def write_txt(transcript: Iterator[dict], file: TextIO):
 def write_vtt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
     print("WEBVTT\n", file=file)
     for segment in transcript:
-        text = processText(segment['text'], maxLineWidth).replace('-->', '->')
+        text = process_text(segment['text'], maxLineWidth).replace('-->', '->')
 
         print(
             f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
@@ -79,7 +79,7 @@ def write_srt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
             write_srt(result["segments"], file=srt)
     """
     for i, segment in enumerate(transcript, start=1):
-        text = processText(segment['text'].strip(), maxLineWidth).replace('-->', '->')
+        text = process_text(segment['text'].strip(), maxLineWidth).replace('-->', '->')
 
         # write srt lines
         print(
@@ -91,7 +91,7 @@ def write_srt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
             flush=True,
         )
 
-def processText(text: str, maxLineWidth=None):
+def process_text(text: str, maxLineWidth=None):
     if (maxLineWidth is None or maxLineWidth < 0):
         return text
 

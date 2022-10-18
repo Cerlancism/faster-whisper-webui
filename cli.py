@@ -30,6 +30,7 @@ def cli():
     parser.add_argument("--vad_merge_window", type=optional_float, default=5, help="The window size (in seconds) to merge voice segments")
     parser.add_argument("--vad_max_merge_size", type=optional_float, default=150, help="The maximum size (in seconds) of a voice segment")
     parser.add_argument("--vad_padding", type=optional_float, default=1, help="The padding (in seconds) to add to each voice segment")
+    parser.add_argument("--vad_prompt_window", type=optional_float, default=0, help="The window size of the prompt to pass to Whisper")
 
     parser.add_argument("--temperature", type=float, default=0, help="temperature to use for sampling")
     parser.add_argument("--best_of", type=optional_int, default=5, help="number of candidates when sampling with non-zero temperature")
@@ -69,6 +70,7 @@ def cli():
     vad_merge_window = args.pop("vad_merge_window")
     vad_max_merge_size = args.pop("vad_max_merge_size")
     vad_padding = args.pop("vad_padding")
+    vad_prompt_window = args.pop("vad_prompt_window")
 
     model = whisper.load_model(model_name, device=device, download_root=model_dir)
     transcriber = WhisperTranscriber(deleteUploadedFiles=False)
@@ -91,7 +93,7 @@ def cli():
 
             result = transcriber.transcribe_file(model, source_path, temperature=temperature, 
                                                 vad=vad, vadMergeWindow=vad_merge_window, vadMaxMergeSize=vad_max_merge_size, 
-                                                vadPadding=vad_padding, **args)
+                                                vadPadding=vad_padding, vadPromptWindow=vad_prompt_window, **args)
             
             transcriber.write_result(result, source_name, output_dir)
 
