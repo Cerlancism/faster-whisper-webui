@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import Counter, deque
-from typing import Any, Iterator, List, Dict
+
+from typing import Any, Deque, Iterator, List, Dict
 
 from pprint import pprint
 
@@ -19,6 +20,20 @@ import numpy as np
 from src.utils import format_timestamp
 from enum import Enum
 
+class NonSpeechStrategy(Enum):
+    """
+    Ignore non-speech frames segments.
+    """
+    SKIP = 1
+    """
+    Just treat non-speech segments as speech.
+    """
+    CREATE_SEGMENT = 2
+    """
+    Expand speech segments into subsequent non-speech segments.
+    """
+    EXPAND_SEGMENT = 3
+
 # Defaults for Silero
 SPEECH_TRESHOLD = 0.3
 MAX_SILENT_PERIOD = 10 # seconds
@@ -27,9 +42,6 @@ MAX_MERGE_SIZE = 150 # Do not create segments larger than 2.5 minutes
 # Default segment padding
 SEGMENT_PADDING_LEFT = 1 # Start detected text segment early
 SEGMENT_PADDING_RIGHT = 1 # End detected segments late
-
-# Whether to attempt to transcribe non-speech
-TRANSCRIBE_NON_SPEECH = False
 
 # Minimum size of segments to process
 MIN_SEGMENT_DURATION = 1
@@ -46,13 +58,13 @@ VAD_MAX_PROCESSING_CHUNK = 60 * 60 # 60 minutes of audio
 
 class AbstractTranscription(ABC):
     def __init__(self, segment_padding_left: float = None, segment_padding_right = None, max_silent_period: float = None, 
-                       max_merge_size: float = None, transcribe_non_speech: bool = False, max_prompt_window: float = None):
+                       max_merge_size: float = None, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, max_prompt_window: float = None):
         self.sampling_rate = 16000
         self.segment_padding_left = segment_padding_left
         self.segment_padding_right = segment_padding_right
         self.max_silent_period = max_silent_period
         self.max_merge_size = max_merge_size
-        self.transcribe_non_speech = transcribe_non_speech
+        self.non_speech_strategy = non_speech_strategy
         self.max_prompt_window = max_prompt_window
 
         self.min_force_merge_gap = MIN_FORCE_MERGE_GAP
@@ -107,16 +119,18 @@ class AbstractTranscription(ABC):
         print("Timestamps:")
         pprint(merged)
 
-        if self.transcribe_non_speech:
+        if self.non_speech_strategy != NonSpeechStrategy.SKIP:
             max_audio_duration = get_audio_duration(audio)
 
             # Expand segments to include the gaps between them
-            if (self.max_prompt_window is not None and self.max_prompt_window > 0):
+            if (self.non_speech_strategy == NonSpeechStrategy.CREATE_SEGMENT):
                 # When we have a prompt window, we create speech segments betwen each segment if we exceed the merge size
                 merged = self.fill_gaps(merged, total_duration=max_audio_duration, max_expand_size=self.max_merge_size)
-            else:
-                # With no prompt window, it is better to expand the segments
+            elif self.non_speech_strategy == NonSpeechStrategy.EXPAND_SEGMENT: 
+                # With no prompt window, it is better to just expand the segments (this effectively passes the prompt to the next segment)
                 merged = self.expand_gaps(merged, total_duration=max_audio_duration)
+            else:
+                raise Exception("Unknown non-speech strategy: " + str(self.non_speech_strategy))
 
             print("Transcribing non-speech:")
             pprint(merged)
@@ -150,6 +164,17 @@ class AbstractTranscription(ABC):
 
             adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
+            # Propagate expand amount to the segments
+            if (segment_expand_amount > 0):
+                segment_without_expansion = segment_duration - segment_expand_amount
+
+                for adjusted_segment in adjusted_segments:
+                    adjusted_segment_end = adjusted_segment['end']
+
+                    # Add expand amount if the segment got expanded
+                    if (adjusted_segment_end > segment_without_expansion):
+                        adjusted_segment["expand_amount"] = adjusted_segment_end - segment_without_expansion
+
             # Append to output
             result['text'] += segment_result['text']
             result['segments'].extend(adjusted_segments)
@@ -158,20 +183,30 @@ class AbstractTranscription(ABC):
             languageCounter[segment_result['language']] += 1
 
             # Update prompt window
-            if (self.max_prompt_window is not None and self.max_prompt_window > 0):
-                # Add segments to the current prompt window
-                for segment in adjusted_segments:
-                    if segment.get('no_speech_prob', 0) <= PROMPT_NO_SPEECH_PROB:
-                        prompt_window.append(segment)
-
-                while (len(prompt_window) > 0 and prompt_window[0]['end'] < segment_end - self.max_prompt_window):
-                    prompt_window.popleft()
-
+            self.__update_prompt_window(prompt_window, adjusted_segments, segment_end)
+            
         if len(languageCounter) > 0:
             result['language'] = languageCounter.most_common(1)[0][0]
 
         return result
             
+    def __update_prompt_window(self, prompt_window: Deque, adjusted_segments: List, segment_end: float):
+        if (self.max_prompt_window is not None and self.max_prompt_window > 0):
+            # Add segments to the current prompt window
+            for segment in adjusted_segments:
+                if segment.get('no_speech_prob', 0) <= PROMPT_NO_SPEECH_PROB:
+                    prompt_window.append(segment)
+
+            while (len(prompt_window) > 0):
+                first_end_time = prompt_window[0].get('end', 0)
+                # Time expanded in the segments should be discounted from the prompt window
+                first_expand_time = prompt_window[0].get('expand_amount', 0)
+
+                if (first_end_time - first_expand_time < segment_end - self.max_prompt_window):
+                    prompt_window.popleft()
+                else:
+                    break
+
     def include_gaps(self, segments: Iterator[dict], min_gap_length: float, total_duration: float):
         result = []
         last_end_time = 0
@@ -360,7 +395,8 @@ class AbstractTranscription(ABC):
             if distance <= max_merge_gap and (max_merge_size is None or current_entry_size <= max_merge_size):
                 # Regular merge
                 current_entry['end'] = entry['end']
-            elif min_force_merge_gap is not None and distance <= min_force_merge_gap and (max_force_merge_size is None or current_entry_size <= max_force_merge_size):
+            elif min_force_merge_gap is not None and distance <= min_force_merge_gap and \
+                 (max_force_merge_size is None or current_entry_size <= max_force_merge_size):
                 # Force merge if the distance is small (up to a certain maximum size)
                 current_entry['end'] = entry['end']
             else:
@@ -389,10 +425,10 @@ class AbstractTranscription(ABC):
 
 class VadSileroTranscription(AbstractTranscription):
     def __init__(self, segment_padding_left=SEGMENT_PADDING_LEFT, segment_padding_right=SEGMENT_PADDING_RIGHT, 
-                 max_silent_period=MAX_SILENT_PERIOD, max_merge_size=MAX_MERGE_SIZE, transcribe_non_speech: bool = False, 
+                 max_silent_period=MAX_SILENT_PERIOD, max_merge_size=MAX_MERGE_SIZE, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, 
                  max_prompt_window=MAX_PROMPT_WINDOW, copy = None):
         super().__init__(segment_padding_left=segment_padding_left, segment_padding_right=segment_padding_right, 
-                         max_silent_period=max_silent_period, max_merge_size=max_merge_size, transcribe_non_speech=transcribe_non_speech, max_prompt_window=max_prompt_window)
+                         max_silent_period=max_silent_period, max_merge_size=max_merge_size, non_speech_strategy=non_speech_strategy, max_prompt_window=max_prompt_window)
 
         if copy:
             self.model = copy.model
