@@ -5,6 +5,8 @@ from typing import Any, Deque, Iterator, List, Dict
 
 from pprint import pprint
 
+from src.segments import merge_timestamps
+
 # Workaround for https://github.com/tensorflow/tensorflow/issues/48797
 try:
     import tensorflow as tf
@@ -110,8 +112,10 @@ class AbstractTranscription(ABC):
         # get speech timestamps from full audio file
         seconds_timestamps = self.get_transcribe_timestamps(audio)
 
-        padded = self.pad_timestamps(seconds_timestamps, self.segment_padding_left, self.segment_padding_right)
-        merged = self.merge_timestamps(padded, self.max_silent_period, self.max_merge_size, self.min_force_merge_gap, self.max_force_merge_size)
+        #for seconds_timestamp in seconds_timestamps:
+        #    print("VAD timestamp ", format_timestamp(seconds_timestamp['start']), " to ", format_timestamp(seconds_timestamp['end']))
+
+        merged = merge_timestamps(seconds_timestamps, self.max_silent_period, self.max_merge_size, self.segment_padding_left, self.segment_padding_right)
 
         # A deque of transcribed segments that is passed to the next segment as a prompt
         prompt_window = deque()
@@ -344,70 +348,6 @@ class AbstractTranscription(ABC):
             new_segment['start'] = segment_start + adjust_seconds
             new_segment['end'] = segment_end + adjust_seconds
             result.append(new_segment)
-        return result
-
-    def pad_timestamps(self, timestamps: List[Dict[str, Any]], padding_left: float, padding_right: float):
-        if (padding_left == 0 and padding_right == 0):
-            return timestamps
-        
-        result = []
-        prev_entry = None
-
-        for i in range(len(timestamps)):
-            curr_entry = timestamps[i]
-            next_entry = timestamps[i + 1] if i < len(timestamps) - 1 else None
-
-            segment_start = curr_entry['start']
-            segment_end = curr_entry['end']
-
-            if padding_left is not None:
-                segment_start = max(prev_entry['end'] if prev_entry else 0, segment_start - padding_left)
-            if padding_right is not None:
-                segment_end = segment_end + padding_right
-
-                # Do not pad past the next segment
-                if (next_entry is not None):
-                    segment_end = min(next_entry['start'], segment_end)
-
-            new_entry = { 'start': segment_start, 'end': segment_end }
-            prev_entry = new_entry
-            result.append(new_entry)
-
-        return result
-
-    def merge_timestamps(self, timestamps: List[Dict[str, Any]], max_merge_gap: float, max_merge_size: float, 
-                                min_force_merge_gap: float, max_force_merge_size: float):
-        if max_merge_gap is None:
-            return timestamps
-
-        result = []
-        current_entry = None
-
-        for entry in timestamps:
-            if current_entry is None:
-                current_entry = entry
-                continue
-
-            # Get distance to the previous entry
-            distance = entry['start'] - current_entry['end']
-            current_entry_size = current_entry['end'] - current_entry['start']
-
-            if distance <= max_merge_gap and (max_merge_size is None or current_entry_size <= max_merge_size):
-                # Regular merge
-                current_entry['end'] = entry['end']
-            elif min_force_merge_gap is not None and distance <= min_force_merge_gap and \
-                 (max_force_merge_size is None or current_entry_size <= max_force_merge_size):
-                # Force merge if the distance is small (up to a certain maximum size)
-                current_entry['end'] = entry['end']
-            else:
-                # Output current entry
-                result.append(current_entry)
-                current_entry = entry
-        
-        # Add final entry
-        if current_entry is not None:
-            result.append(current_entry)
-
         return result
 
     def multiply_timestamps(self, timestamps: List[Dict[str, Any]], factor: float):
