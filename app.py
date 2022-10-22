@@ -90,7 +90,8 @@ class WhisperTranscriber:
     def transcribe_file(self, model: whisper.Whisper, audio_path: str, language: str, task: str = None, vad: str = None, 
                         vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, **decodeOptions: dict):
         # Callable for processing an audio file
-        whisperCallable = lambda audio, prompt : model.transcribe(audio, language=language, task=task, initial_prompt=prompt, **decodeOptions)
+        whisperCallable = lambda audio, prompt, detected_language : model.transcribe(audio, \
+                 language=language if language else detected_language, task=task, initial_prompt=prompt, **decodeOptions)
 
         # The results
         if (vad == 'silero-vad'):
@@ -112,7 +113,7 @@ class WhisperTranscriber:
             result = periodic_vad.transcribe(audio_path, whisperCallable)
         else:
             # Default VAD
-            result = whisperCallable(audio_path, None)
+            result = whisperCallable(audio_path, None, None)
 
         return result
 

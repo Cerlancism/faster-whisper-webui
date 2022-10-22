@@ -100,9 +100,9 @@ class AbstractTranscription(ABC):
         audio: str
             The audio file.
 
-        whisperCallable: Callable[[Union[str, np.ndarray, torch.Tensor], str], dict[str, Union[dict, Any]]]
+        whisperCallable: Callable[[Union[str, np.ndarray, torch.Tensor], str, str], dict[str, Union[dict, Any]]]
             The callback that is used to invoke Whisper on an audio file/buffer. The first parameter is the audio file/buffer, 
-            and the second parameter is an optional text prompt. The return value is the result of the Whisper call.
+            the second parameter is an optional text prompt, and the last is the current detected language. The return value is the result of the Whisper call.
 
         Returns
         -------
@@ -145,6 +145,7 @@ class AbstractTranscription(ABC):
             'language': ""
         }
         languageCounter = Counter()
+        detected_language = None
 
         # For each time segment, run whisper
         for segment in merged:
@@ -163,9 +164,12 @@ class AbstractTranscription(ABC):
             # Previous segments to use as a prompt
             segment_prompt = ' '.join([segment['text'] for segment in prompt_window]) if len(prompt_window) > 0 else None
     
+            # Detected language
+            detected_language = languageCounter.most_common(1)[0][0] if len(languageCounter) > 0 else None
+
             print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", 
-                  segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt)
-            segment_result = whisperCallable(segment_audio, segment_prompt)
+                  segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt, "language: ", detected_language)
+            segment_result = whisperCallable(segment_audio, segment_prompt, detected_language)
 
             adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
@@ -185,13 +189,14 @@ class AbstractTranscription(ABC):
             result['segments'].extend(adjusted_segments)
 
             # Increment detected language
-            languageCounter[segment_result['language']] += 1
+            if not segment_gap:
+                languageCounter[segment_result['language']] += 1
 
             # Update prompt window
             self.__update_prompt_window(prompt_window, adjusted_segments, segment_end, segment_gap)
             
-        if len(languageCounter) > 0:
-            result['language'] = languageCounter.most_common(1)[0][0]
+        if detected_language is not None:
+            result['language'] = detected_language
 
         return result
             
