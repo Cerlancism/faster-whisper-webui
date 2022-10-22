@@ -33,11 +33,23 @@ the URL.
 Select the task - either "transcribe" to transcribe the audio to text, or "translate" to translate it to English.
 
 ## Vad
+Using a VAD will improve the timing accuracy of each transcribed line, as well as prevent Whisper getting into an infinite
+loop detecting the same sentence over and over again. The downside is that this may be at a cost to text accuracy, especially
+with regards to unique words or names that appear in the audio. You can compensate for this by increasing the prompt window. 
+
+Note that English is very well handled by Whisper, and it's less susceptible to issues surrounding bad timings and infinite loops. 
+So you may only need to use a VAD for other languages, such as Japanese, or when the audio is very long.
+
 * none
   * Run whisper on the entire audio input
 * silero-vad
-   * Use Silero VAD to detect sections that contain speech, and run whisper on independently on each section. Whisper is also run 
-     on the gaps between each speech section.
+   * Use Silero VAD to detect sections that contain speech, and run Whisper on independently on each section. Whisper is also run 
+     on the gaps between each speech section, by either expanding the section up to the max merge size, or running Whisper independently 
+     on the non-speech section.
+* silero-vad-expand-into-gaps
+   * Use Silero VAD to detect sections that contain speech, and run Whisper on independently on each section. Each spech section will be expanded
+     such that they cover any adjacent non-speech sections. For instance, if an audio file of one minute contains the speech sections 
+     00:00 - 00:10 (A) and 00:30 - 00:40 (B), the first section (A) will be expanded to 00:00 - 00:30, and (B) will be expanded to 00:30 - 00:60.
 * silero-vad-skip-gaps
    * As above, but sections that doesn't contain speech according to Silero will be skipped. This will be slightly faster, but 
      may cause dialogue to be skipped.
@@ -56,3 +68,11 @@ The number of seconds (floating point) to add to the beginning and end of each s
 larger than zero ensures that Whisper is more likely to correctly transcribe a sentence in the beginning of 
 a speech section. However, this also increases the probability of Whisper assigning the wrong timestamp 
 to each transcribed line. The default value is 1 second.
+
+## VAD - Prompt Window (s)
+The text of a detected line will be included as a prompt to the next speech section, if the speech section starts at most this
+number of seconds after the line has finished. For instance, if a line ends at 10:00, and the next speech section starts at
+10:04, the line's text will be included if the prompt window is 4 seconds or more (10:04 - 10:00 = 4 seconds).
+
+Note that detected lines in gaps between speech sections will not be included in the prompt 
+(if silero-vad or silero-vad-expand-into-gaps) is used.

@@ -209,7 +209,7 @@ def create_ui(inputAudioMaxDuration, share=False, server_name: str = None):
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "
     ui_description += " as well as speech translation and language identification. "
 
-    ui_description += "\n\n\n\nFor longer audio files (>10 minutes), it is recommended that you select Silero VAD (Voice Activity Detector) in the VAD option."
+    ui_description += "\n\n\n\nFor longer audio files (>10 minutes) not in English, it is recommended that you select Silero VAD (Voice Activity Detector) in the VAD option."
 
     if inputAudioMaxDuration > 0:
         ui_description += "\n\n" + "Max audio file length: " + str(inputAudioMaxDuration) + " s"
