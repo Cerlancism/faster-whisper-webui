@@ -151,6 +151,7 @@ class AbstractTranscription(ABC):
             segment_start = segment['start']
             segment_end = segment['end']
             segment_expand_amount = segment.get('expand_amount', 0)
+            segment_gap = segment.get('gap', False)
 
             segment_duration = segment_end - segment_start
 
@@ -187,19 +188,20 @@ class AbstractTranscription(ABC):
             languageCounter[segment_result['language']] += 1
 
             # Update prompt window
-            self.__update_prompt_window(prompt_window, adjusted_segments, segment_end)
+            self.__update_prompt_window(prompt_window, adjusted_segments, segment_end, segment_gap)
             
         if len(languageCounter) > 0:
             result['language'] = languageCounter.most_common(1)[0][0]
 
         return result
             
-    def __update_prompt_window(self, prompt_window: Deque, adjusted_segments: List, segment_end: float):
+    def __update_prompt_window(self, prompt_window: Deque, adjusted_segments: List, segment_end: float, segment_gap: bool = False):
         if (self.max_prompt_window is not None and self.max_prompt_window > 0):
-            # Add segments to the current prompt window
-            for segment in adjusted_segments:
-                if segment.get('no_speech_prob', 0) <= PROMPT_NO_SPEECH_PROB:
-                    prompt_window.append(segment)
+            # Add segments to the current prompt window (unless it is a speech gap)
+            if not segment_gap:
+                for segment in adjusted_segments:
+                    if segment.get('no_speech_prob', 0) <= PROMPT_NO_SPEECH_PROB:
+                        prompt_window.append(segment)
 
             while (len(prompt_window) > 0):
                 first_end_time = prompt_window[0].get('end', 0)
