@@ -7,6 +7,13 @@ def merge_timestamps(timestamps: List[Dict[str, Any]], merge_window: float = 5, 
 
     if len(timestamps) == 0:
         return result
+    if max_merge_size is None:
+        return timestamps
+
+    if padding_left is None:
+        padding_left = 0
+    if padding_right is None:
+        padding_right = 0
 
     processed_time = 0
     current_segment = None
@@ -17,7 +24,8 @@ def merge_timestamps(timestamps: List[Dict[str, Any]], merge_window: float = 5, 
         delta = next_segment['start'] - processed_time
 
         # Note that segments can still be longer than the max merge size, they just won't be merged in that case
-        if current_segment is None or delta > merge_window or next_segment['end'] - current_segment['start'] > max_merge_size:
+        if current_segment is None or (merge_window is not None and delta > merge_window) \
+                 or next_segment['end'] - current_segment['start'] > max_merge_size:
             # Finish the current segment
             if current_segment is not None:
                 # Add right padding

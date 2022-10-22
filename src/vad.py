@@ -38,19 +38,9 @@ class NonSpeechStrategy(Enum):
 
 # Defaults for Silero
 SPEECH_TRESHOLD = 0.3
-MAX_SILENT_PERIOD = 10 # seconds
-MAX_MERGE_SIZE = 150 # Do not create segments larger than 2.5 minutes
-
-# Default segment padding
-SEGMENT_PADDING_LEFT = 1 # Start detected text segment early
-SEGMENT_PADDING_RIGHT = 1 # End detected segments late
 
 # Minimum size of segments to process
 MIN_SEGMENT_DURATION = 1
-
-# Always merge segments that are less than this duration apart
-MIN_FORCE_MERGE_GAP = 0.5
-FORCE_MERGE_SEGMENT_MULTIPLIER = 1.5
 
 # The maximum time for texts from old segments to be used in the next segment 
 MAX_PROMPT_WINDOW = 0 # seconds (0 = disabled)
@@ -58,25 +48,33 @@ PROMPT_NO_SPEECH_PROB = 0.1 # Do not pass the text from segments with a no speec
 
 VAD_MAX_PROCESSING_CHUNK = 60 * 60 # 60 minutes of audio
 
-class AbstractTranscription(ABC):
-    def __init__(self, segment_padding_left: float = None, segment_padding_right = None, max_silent_period: float = None, 
-                       max_merge_size: float = None, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, max_prompt_window: float = None):
-        self.sampling_rate = 16000
+class TranscriptionConfig(ABC):
+    def __init__(self, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, 
+                       segment_padding_left: float = None, segment_padding_right = None, max_silent_period: float = None, 
+                       max_merge_size: float = None, max_prompt_window: float = None):
+        self.non_speech_strategy = non_speech_strategy
         self.segment_padding_left = segment_padding_left
         self.segment_padding_right = segment_padding_right
         self.max_silent_period = max_silent_period
         self.max_merge_size = max_merge_size
-        self.non_speech_strategy = non_speech_strategy
         self.max_prompt_window = max_prompt_window
 
-        self.min_force_merge_gap = MIN_FORCE_MERGE_GAP
-        self.max_force_merge_size = max_merge_size * FORCE_MERGE_SEGMENT_MULTIPLIER if max_merge_size is not None else None
+class PeriodicTranscriptionConfig(TranscriptionConfig):
+    def __init__(self, periodic_duration: float, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, 
+                       segment_padding_left: float = None, segment_padding_right = None, max_silent_period: float = None, 
+                       max_merge_size: float = None, max_prompt_window: float = None):
+        super().__init__(non_speech_strategy, segment_padding_left, segment_padding_right, max_silent_period, max_merge_size, max_prompt_window)
+        self.periodic_duration = periodic_duration
+
+class AbstractTranscription(ABC):
+    def __init__(self, sampling_rate: int = 16000):
+        self.sampling_rate = sampling_rate
 
     def get_audio_segment(self, str, start_time: str = None, duration: str = None):
         return load_audio(str, self.sampling_rate, start_time, duration)
 
     @abstractmethod
-    def get_transcribe_timestamps(self, audio: str):
+    def get_transcribe_timestamps(self, audio: str, config: TranscriptionConfig):
         """
         Get the start and end timestamps of the sections that should be transcribed by this VAD method.
 
@@ -84,6 +82,8 @@ class AbstractTranscription(ABC):
         ----------
         audio: str
             The audio file.
+        config: TranscriptionConfig
+            The transcription configuration.
 
         Returns
         -------
@@ -91,7 +91,7 @@ class AbstractTranscription(ABC):
         """
         return 
 
-    def transcribe(self, audio: str, whisperCallable):
+    def transcribe(self, audio: str, whisperCallable, config: TranscriptionConfig):
         """
         Transcribe the given audo file.
 
@@ -110,12 +110,12 @@ class AbstractTranscription(ABC):
         """
 
         # get speech timestamps from full audio file
-        seconds_timestamps = self.get_transcribe_timestamps(audio)
+        seconds_timestamps = self.get_transcribe_timestamps(audio, config)
 
         #for seconds_timestamp in seconds_timestamps:
         #    print("VAD timestamp ", format_timestamp(seconds_timestamp['start']), " to ", format_timestamp(seconds_timestamp['end']))
 
-        merged = merge_timestamps(seconds_timestamps, self.max_silent_period, self.max_merge_size, self.segment_padding_left, self.segment_padding_right)
+        merged = merge_timestamps(seconds_timestamps, config.max_silent_period, config.max_merge_size, config.segment_padding_left, config.segment_padding_right)
 
         # A deque of transcribed segments that is passed to the next segment as a prompt
         prompt_window = deque()
@@ -123,18 +123,18 @@ class AbstractTranscription(ABC):
         print("Timestamps:")
         pprint(merged)
 
-        if self.non_speech_strategy != NonSpeechStrategy.SKIP:
+        if config.non_speech_strategy != NonSpeechStrategy.SKIP:
             max_audio_duration = get_audio_duration(audio)
 
             # Expand segments to include the gaps between them
-            if (self.non_speech_strategy == NonSpeechStrategy.CREATE_SEGMENT):
+            if (config.non_speech_strategy == NonSpeechStrategy.CREATE_SEGMENT):
                 # When we have a prompt window, we create speech segments betwen each segment if we exceed the merge size
-                merged = self.fill_gaps(merged, total_duration=max_audio_duration, max_expand_size=self.max_merge_size)
-            elif self.non_speech_strategy == NonSpeechStrategy.EXPAND_SEGMENT: 
+                merged = self.fill_gaps(merged, total_duration=max_audio_duration, max_expand_size=config.max_merge_size)
+            elif config.non_speech_strategy == NonSpeechStrategy.EXPAND_SEGMENT: 
                 # With no prompt window, it is better to just expand the segments (this effectively passes the prompt to the next segment)
                 merged = self.expand_gaps(merged, total_duration=max_audio_duration)
             else:
-                raise Exception("Unknown non-speech strategy: " + str(self.non_speech_strategy))
+                raise Exception("Unknown non-speech strategy: " + str(config.non_speech_strategy))
 
             print("Transcribing non-speech:")
             pprint(merged)
@@ -193,15 +193,15 @@ class AbstractTranscription(ABC):
                 languageCounter[segment_result['language']] += 1
 
             # Update prompt window
-            self.__update_prompt_window(prompt_window, adjusted_segments, segment_end, segment_gap)
+            self.__update_prompt_window(prompt_window, adjusted_segments, segment_end, segment_gap, config)
             
         if detected_language is not None:
             result['language'] = detected_language
 
         return result
             
-    def __update_prompt_window(self, prompt_window: Deque, adjusted_segments: List, segment_end: float, segment_gap: bool = False):
-        if (self.max_prompt_window is not None and self.max_prompt_window > 0):
+    def __update_prompt_window(self, prompt_window: Deque, adjusted_segments: List, segment_end: float, segment_gap: bool, config: TranscriptionConfig):
+        if (config.max_prompt_window is not None and config.max_prompt_window > 0):
             # Add segments to the current prompt window (unless it is a speech gap)
             if not segment_gap:
                 for segment in adjusted_segments:
@@ -213,7 +213,7 @@ class AbstractTranscription(ABC):
                 # Time expanded in the segments should be discounted from the prompt window
                 first_expand_time = prompt_window[0].get('expand_amount', 0)
 
-                if (first_end_time - first_expand_time < segment_end - self.max_prompt_window):
+                if (first_end_time - first_expand_time < segment_end - config.max_prompt_window):
                     prompt_window.popleft()
                 else:
                     break
@@ -371,20 +371,14 @@ class AbstractTranscription(ABC):
         return result
 
 class VadSileroTranscription(AbstractTranscription):
-    def __init__(self, segment_padding_left=SEGMENT_PADDING_LEFT, segment_padding_right=SEGMENT_PADDING_RIGHT, 
-                 max_silent_period=MAX_SILENT_PERIOD, max_merge_size=MAX_MERGE_SIZE, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, 
-                 max_prompt_window=MAX_PROMPT_WINDOW, copy = None):
-        super().__init__(segment_padding_left=segment_padding_left, segment_padding_right=segment_padding_right, 
-                         max_silent_period=max_silent_period, max_merge_size=max_merge_size, non_speech_strategy=non_speech_strategy, max_prompt_window=max_prompt_window)
+    def __init__(self, sampling_rate: int = 16000):
+        super().__init__(sampling_rate=sampling_rate)
 
-        if copy:
-            self.model = copy.model
-            self.get_speech_timestamps = copy.get_speech_timestamps
-        else:
-            self.model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad')
-            (self.get_speech_timestamps, _, _, _, _) = utils
+        self.model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad')
+        (self.get_speech_timestamps, _, _, _, _) = utils
 
-    def get_transcribe_timestamps(self, audio: str):
+
+    def get_transcribe_timestamps(self, audio: str, config: TranscriptionConfig):
         audio_duration = get_audio_duration(audio)
         result = []
 
@@ -410,11 +404,10 @@ class VadSileroTranscription(AbstractTranscription):
 
 # A very simple VAD that just marks every N seconds as speech
 class VadPeriodicTranscription(AbstractTranscription):
-    def __init__(self, periodic_duration: float):
-        super().__init__()
-        self.periodic_duration = periodic_duration
+    def __init__(self, sampling_rate: int = 16000):
+        super().__init__(sampling_rate=sampling_rate)
 
-    def get_transcribe_timestamps(self, audio: str):
+    def get_transcribe_timestamps(self, audio: str, config: PeriodicTranscriptionConfig):
         # Get duration in seconds
         audio_duration = get_audio_duration(audio)
         result = []
@@ -423,7 +416,7 @@ class VadPeriodicTranscription(AbstractTranscription):
         start_timestamp = 0
 
         while (start_timestamp < audio_duration):
-            end_timestamp = min(start_timestamp + self.periodic_duration, audio_duration)
+            end_timestamp = min(start_timestamp + config.periodic_duration, audio_duration)
             segment_duration = end_timestamp - start_timestamp
 
             # Minimum duration is 1 second

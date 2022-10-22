@@ -14,7 +14,7 @@ import gradio as gr
 
 from src.download import ExceededMaximumDuration, download_url
 from src.utils import slugify, write_srt, write_vtt
-from src.vad import NonSpeechStrategy, VadPeriodicTranscription, VadSileroTranscription
+from src.vad import NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
 
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
@@ -96,38 +96,38 @@ class WhisperTranscriber:
         # The results
         if (vad == 'silero-vad'):
             # Silero VAD where non-speech gaps are transcribed
-            process_gaps = self._create_silero_vad(NonSpeechStrategy.CREATE_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = process_gaps.transcribe(audio_path, whisperCallable)
+            process_gaps = self._create_silero_config(NonSpeechStrategy.CREATE_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+            result = self.vad_model.transcribe(audio_path, whisperCallable, process_gaps)
         elif (vad == 'silero-vad-skip-gaps'):
             # Silero VAD where non-speech gaps are simply ignored
-            skip_gaps = self._create_silero_vad(NonSpeechStrategy.SKIP, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = skip_gaps.transcribe(audio_path, whisperCallable)
+            skip_gaps = self._create_silero_config(NonSpeechStrategy.SKIP, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+            result = skip_gaps.transcribe(audio_path, whisperCallable, skip_gaps)
         elif (vad == 'silero-vad-expand-into-gaps'):
             # Use Silero VAD where speech-segments are expanded into non-speech gaps
-            expand_gaps = self._create_silero_vad(NonSpeechStrategy.EXPAND_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = expand_gaps.transcribe(audio_path, whisperCallable)
+            expand_gaps = self._create_silero_config(NonSpeechStrategy.EXPAND_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+            result = expand_gaps.transcribe(audio_path, whisperCallable, expand_gaps)
         elif (vad == 'periodic-vad'):
             # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
             # it may create a break in the middle of a sentence, causing some artifacts.
-            periodic_vad = VadPeriodicTranscription(periodic_duration=vadMaxMergeSize)
-            result = periodic_vad.transcribe(audio_path, whisperCallable)
+            periodic_vad = VadPeriodicTranscription()
+            result = periodic_vad.transcribe(audio_path, whisperCallable, PeriodicTranscriptionConfig(periodic_duration=vadMaxMergeSize, max_prompt_window=vadPromptWindow))
         else:
             # Default VAD
             result = whisperCallable(audio_path, None, None)
 
         return result
 
-    def _create_silero_vad(self, non_speech_strategy: NonSpeechStrategy, vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1):
+    def _create_silero_config(self, non_speech_strategy: NonSpeechStrategy, vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1):
         # Use Silero VAD 
         if (self.vad_model is None):
             self.vad_model = VadSileroTranscription()
 
-        result = VadSileroTranscription(non_speech_strategy = non_speech_strategy, 
+        config = TranscriptionConfig(non_speech_strategy = non_speech_strategy, 
                 max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
                 segment_padding_left=vadPadding, segment_padding_right=vadPadding, 
-                max_prompt_window=vadPromptWindow, copy=self.vad_model)
+                max_prompt_window=vadPromptWindow)
 
-        return result
+        return config
 
     def write_result(self, result: dict, source_name: str, output_dir: str):
         if not os.path.exists(output_dir):
