@@ -24,13 +24,14 @@ Finally, run the full version (no audio length restrictions) of the app:
 python app-full.py
 ```
 
-You can also run the CLI interface, which is similar to Whisper's own CLI but also supports the following additional arguments>
+You can also run the CLI interface, which is similar to Whisper's own CLI but also supports the following additional arguments:
 ```
 python cli.py \
-[--vad {none,silero-vad,silero-vad-skip-gaps,periodic-vad}] \
+[--vad {none,silero-vad,silero-vad-skip-gaps,silero-vad-expand-into-gaps,periodic-vad}] \
 [--vad_merge_window VAD_MERGE_WINDOW] \
 [--vad_max_merge_size VAD_MAX_MERGE_SIZE] \
-[--vad_padding VAD_PADDING]
+[--vad_padding VAD_PADDING] \
+[--vad_prompt_window VAD_PROMPT_WINDOW]
 ```
 In addition, you may also use URL's in addition to file paths as input.
 ```
