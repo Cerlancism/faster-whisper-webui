@@ -89,9 +89,17 @@ class WhisperTranscriber:
 
     def transcribe_file(self, model: whisper.Whisper, audio_path: str, language: str, task: str = None, vad: str = None, 
                         vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, **decodeOptions: dict):
+        
+        initial_prompt = decodeOptions.pop('initial_prompt', None)
+
+        if ('task' in decodeOptions):
+            task = decodeOptions.pop('task')
+
         # Callable for processing an audio file
-        whisperCallable = lambda audio, prompt, detected_language : model.transcribe(audio, \
-                 language=language if language else detected_language, task=task, initial_prompt=prompt, **decodeOptions)
+        whisperCallable = lambda audio, segment_index, prompt, detected_language : model.transcribe(audio, \
+                 language=language if language else detected_language, task=task, \
+                 initial_prompt=self._concat_prompt(initial_prompt, prompt) if segment_index == 0 else prompt, \
+                 **decodeOptions)
 
         # The results
         if (vad == 'silero-vad'):
@@ -113,9 +121,17 @@ class WhisperTranscriber:
             result = periodic_vad.transcribe(audio_path, whisperCallable, PeriodicTranscriptionConfig(periodic_duration=vadMaxMergeSize, max_prompt_window=vadPromptWindow))
         else:
             # Default VAD
-            result = whisperCallable(audio_path, None, None)
+            result = whisperCallable(audio_path, 0, None, None)
 
         return result
+
+    def _concat_prompt(self, prompt1, prompt2):
+        if (prompt1 is None):
+            return prompt2
+        elif (prompt2 is None):
+            return prompt1
+        else:
+            return prompt1 + " " + prompt2
 
     def _create_silero_config(self, non_speech_strategy: NonSpeechStrategy, vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1):
         # Use Silero VAD 

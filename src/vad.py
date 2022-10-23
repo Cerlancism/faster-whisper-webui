@@ -100,7 +100,7 @@ class AbstractTranscription(ABC):
         audio: str
             The audio file.
 
-        whisperCallable: Callable[[Union[str, np.ndarray, torch.Tensor], str, str], dict[str, Union[dict, Any]]]
+        whisperCallable: Callable[[Union[str, np.ndarray, torch.Tensor], int, str, str], dict[str, Union[dict, Any]]]
             The callback that is used to invoke Whisper on an audio file/buffer. The first parameter is the audio file/buffer, 
             the second parameter is an optional text prompt, and the last is the current detected language. The return value is the result of the Whisper call.
 
@@ -147,8 +147,11 @@ class AbstractTranscription(ABC):
         languageCounter = Counter()
         detected_language = None
 
+        segment_index = -1
+
         # For each time segment, run whisper
         for segment in merged:
+            segment_index += 1
             segment_start = segment['start']
             segment_end = segment['end']
             segment_expand_amount = segment.get('expand_amount', 0)
@@ -169,7 +172,7 @@ class AbstractTranscription(ABC):
 
             print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", 
                   segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt, "language: ", detected_language)
-            segment_result = whisperCallable(segment_audio, segment_prompt, detected_language)
+            segment_result = whisperCallable(segment_audio, segment_index, segment_prompt, detected_language)
 
             adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
