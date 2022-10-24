@@ -109,11 +109,11 @@ class WhisperTranscriber:
         elif (vad == 'silero-vad-skip-gaps'):
             # Silero VAD where non-speech gaps are simply ignored
             skip_gaps = self._create_silero_config(NonSpeechStrategy.SKIP, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = skip_gaps.transcribe(audio_path, whisperCallable, skip_gaps)
+            result = self.vad_model.transcribe(audio_path, whisperCallable, skip_gaps)
         elif (vad == 'silero-vad-expand-into-gaps'):
             # Use Silero VAD where speech-segments are expanded into non-speech gaps
             expand_gaps = self._create_silero_config(NonSpeechStrategy.EXPAND_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = expand_gaps.transcribe(audio_path, whisperCallable, expand_gaps)
+            result = self.vad_model.transcribe(audio_path, whisperCallable, expand_gaps)
         elif (vad == 'periodic-vad'):
             # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
             # it may create a break in the middle of a sentence, causing some artifacts.
