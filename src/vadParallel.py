@@ -94,7 +94,7 @@ class ParallelTranscription(AbstractTranscription):
         parameters = []
         segment_index = config.initial_segment_index
 
-        for i in range(len(devices)):
+        for i in range(len(merged_split)):
             device_segment_list = merged_split[i]
 
             # Create a new config with the given device ID
