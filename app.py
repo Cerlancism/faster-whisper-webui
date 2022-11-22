@@ -1,9 +1,13 @@
 from typing import Iterator
+import argparse
 
 from io import StringIO
 import os
 import pathlib
 import tempfile
+from src.vadParallel import ParallelTranscription
+
+from src.whisperContainer import WhisperContainer
 
 # External programs
 import whisper
@@ -14,7 +18,7 @@ import gradio as gr
 
 from src.download import ExceededMaximumDuration, download_url
 from src.utils import slugify, write_srt, write_vtt
-from src.vad import NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
+from src.vad import AbstractTranscription, NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
 
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
@@ -48,6 +52,7 @@ LANGUAGES = [
 class WhisperTranscriber:
     def __init__(self, inputAudioMaxDuration: float = DEFAULT_INPUT_AUDIO_MAX_DURATION, deleteUploadedFiles: bool = DELETE_UPLOADED_FILES):
         self.model_cache = dict()
+        self.parallel_device_list = None
 
         self.vad_model = None
         self.inputAudioMaxDuration = inputAudioMaxDuration
@@ -64,7 +69,7 @@ class WhisperTranscriber:
                 model = self.model_cache.get(selectedModel, None)
                 
                 if not model:
-                    model = whisper.load_model(selectedModel)
+                    model = WhisperContainer(selectedModel)
                     self.model_cache[selectedModel] = model
 
                 # Execute whisper
@@ -87,7 +92,7 @@ class WhisperTranscriber:
         except ExceededMaximumDuration as e:
             return [], ("[ERROR]: Maximum remote video length is " + str(e.maxDuration) + "s, file was " + str(e.videoDuration) + "s"), "[ERROR]"
 
-    def transcribe_file(self, model: whisper.Whisper, audio_path: str, language: str, task: str = None, vad: str = None, 
+    def transcribe_file(self, model: WhisperContainer, audio_path: str, language: str, task: str = None, vad: str = None, 
                         vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, **decodeOptions: dict):
         
         initial_prompt = decodeOptions.pop('initial_prompt', None)
@@ -96,34 +101,41 @@ class WhisperTranscriber:
             task = decodeOptions.pop('task')
 
         # Callable for processing an audio file
-        whisperCallable = lambda audio, segment_index, prompt, detected_language : model.transcribe(audio, \
-                 language=language if language else detected_language, task=task, \
-                 initial_prompt=self._concat_prompt(initial_prompt, prompt) if segment_index == 0 else prompt, \
-                 **decodeOptions)
+        whisperCallable = model.create_callback(language, task, initial_prompt, **decodeOptions)
 
         # The results
         if (vad == 'silero-vad'):
             # Silero VAD where non-speech gaps are transcribed
             process_gaps = self._create_silero_config(NonSpeechStrategy.CREATE_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = self.vad_model.transcribe(audio_path, whisperCallable, process_gaps)
+            result = self.process_vad(audio_path, whisperCallable, self.vad_model, process_gaps)
         elif (vad == 'silero-vad-skip-gaps'):
             # Silero VAD where non-speech gaps are simply ignored
             skip_gaps = self._create_silero_config(NonSpeechStrategy.SKIP, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = self.vad_model.transcribe(audio_path, whisperCallable, skip_gaps)
+            result = self.process_vad(audio_path, whisperCallable, self.vad_model, skip_gaps)
         elif (vad == 'silero-vad-expand-into-gaps'):
             # Use Silero VAD where speech-segments are expanded into non-speech gaps
             expand_gaps = self._create_silero_config(NonSpeechStrategy.EXPAND_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = self.vad_model.transcribe(audio_path, whisperCallable, expand_gaps)
+            result = self.process_vad(audio_path, whisperCallable, self.vad_model, expand_gaps)
         elif (vad == 'periodic-vad'):
             # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
             # it may create a break in the middle of a sentence, causing some artifacts.
             periodic_vad = VadPeriodicTranscription()
-            result = periodic_vad.transcribe(audio_path, whisperCallable, PeriodicTranscriptionConfig(periodic_duration=vadMaxMergeSize, max_prompt_window=vadPromptWindow))
+            period_config = PeriodicTranscriptionConfig(periodic_duration=vadMaxMergeSize, max_prompt_window=vadPromptWindow)
+            result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config)
+
         else:
             # Default VAD
             result = whisperCallable(audio_path, 0, None, None)
 
         return result
+
+    def process_vad(self, audio_path, whisperCallable, vadModel: AbstractTranscription, vadConfig: TranscriptionConfig):
+        if (self.parallel_device_list is None or len(self.parallel_device_list) == 0):
+            # No parallel devices, so just run the VAD and Whisper in sequence
+            return vadModel.transcribe(audio_path, whisperCallable, vadConfig)
+
+        parallell_vad = ParallelTranscription()
+        return parallell_vad.transcribe_parallel(transcription=vadModel, audio=audio_path, whisperCallable=whisperCallable, config=vadConfig, devices=self.parallel_device_list)
 
     def _concat_prompt(self, prompt1, prompt2):
         if (prompt1 is None):
@@ -218,8 +230,11 @@ class WhisperTranscriber:
         return file.name
 
 
-def create_ui(inputAudioMaxDuration, share=False, server_name: str = None):
+def create_ui(inputAudioMaxDuration, share=False, server_name: str = None, server_port: int = 7860, vad_parallel_devices: str = None):
     ui = WhisperTranscriber(inputAudioMaxDuration)
+
+    # Specify a list of devices to use for parallel processing
+    ui.parallel_device_list = [ device.strip() for device in vad_parallel_devices.split(",") ] if vad_parallel_devices else None
 
     ui_description = "Whisper is a general-purpose speech recognition model. It is trained on a large dataset of diverse " 
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "
@@ -250,7 +265,15 @@ def create_ui(inputAudioMaxDuration, share=False, server_name: str = None):
         gr.Text(label="Segments")
     ])
 
-    demo.launch(share=share, server_name=server_name)   
+    demo.launch(share=share, server_name=server_name, server_port=server_port)  
 
 if __name__ == '__main__':
-    create_ui(DEFAULT_INPUT_AUDIO_MAX_DURATION)
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--inputAudioMaxDuration", type=int, default=600, help="Maximum audio file length in seconds, or -1 for no limit.")
+    parser.add_argument("--share", type=bool, default=False, help="True to share the app on HuggingFace.")
+    parser.add_argument("--server_name", type=str, default=None, help="The host or IP to bind to. If None, bind to localhost.")
+    parser.add_argument("--server_port", type=int, default=7860, help="The port to bind to.")
+    parser.add_argument("--vad_parallel_devices", type=str, default="0,1", help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.")
+
+    args = parser.parse_args().__dict__
+    create_ui(**args)

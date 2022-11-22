@@ -6,6 +6,7 @@ from typing import Any, Deque, Iterator, List, Dict
 from pprint import pprint
 
 from src.segments import merge_timestamps
+from src.whisperContainer import WhisperCallback
 
 # Workaround for https://github.com/tensorflow/tensorflow/issues/48797
 try:
@@ -51,19 +52,20 @@ VAD_MAX_PROCESSING_CHUNK = 60 * 60 # 60 minutes of audio
 class TranscriptionConfig(ABC):
     def __init__(self, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, 
                        segment_padding_left: float = None, segment_padding_right = None, max_silent_period: float = None, 
-                       max_merge_size: float = None, max_prompt_window: float = None):
+                       max_merge_size: float = None, max_prompt_window: float = None, initial_segment_index = -1):
         self.non_speech_strategy = non_speech_strategy
         self.segment_padding_left = segment_padding_left
         self.segment_padding_right = segment_padding_right
         self.max_silent_period = max_silent_period
         self.max_merge_size = max_merge_size
         self.max_prompt_window = max_prompt_window
+        self.initial_segment_index = initial_segment_index
 
 class PeriodicTranscriptionConfig(TranscriptionConfig):
     def __init__(self, periodic_duration: float, non_speech_strategy: NonSpeechStrategy = NonSpeechStrategy.SKIP, 
                        segment_padding_left: float = None, segment_padding_right = None, max_silent_period: float = None, 
-                       max_merge_size: float = None, max_prompt_window: float = None):
-        super().__init__(non_speech_strategy, segment_padding_left, segment_padding_right, max_silent_period, max_merge_size, max_prompt_window)
+                       max_merge_size: float = None, max_prompt_window: float = None, initial_segment_index = -1):
+        super().__init__(non_speech_strategy, segment_padding_left, segment_padding_right, max_silent_period, max_merge_size, max_prompt_window, initial_segment_index)
         self.periodic_duration = periodic_duration
 
 class AbstractTranscription(ABC):
@@ -91,37 +93,26 @@ class AbstractTranscription(ABC):
         """
         return 
 
-    def transcribe(self, audio: str, whisperCallable, config: TranscriptionConfig):
+    def get_merged_timestamps(self, audio: str, config: TranscriptionConfig):
         """
-        Transcribe the given audo file.
+        Get the start and end timestamps of the sections that should be transcribed by this VAD method,
+        after merging the segments using the specified configuration.
 
         Parameters
         ----------
         audio: str
-            The audio file.
-
-        whisperCallable: Callable[[Union[str, np.ndarray, torch.Tensor], int, str, str], dict[str, Union[dict, Any]]]
-            The callback that is used to invoke Whisper on an audio file/buffer. The first parameter is the audio file/buffer, 
-            the second parameter is an optional text prompt, and the last is the current detected language. The return value is the result of the Whisper call.
+            The audio file. 
+        config: TranscriptionConfig
+            The transcription configuration.
 
         Returns
         -------
         A list of start and end timestamps, in fractional seconds.
         """
-
-        # get speech timestamps from full audio file
         seconds_timestamps = self.get_transcribe_timestamps(audio, config)
 
-        #for seconds_timestamp in seconds_timestamps:
-        #    print("VAD timestamp ", format_timestamp(seconds_timestamp['start']), " to ", format_timestamp(seconds_timestamp['end']))
-
-        merged = merge_timestamps(seconds_timestamps, config.max_silent_period, config.max_merge_size, config.segment_padding_left, config.segment_padding_right)
-
-        # A deque of transcribed segments that is passed to the next segment as a prompt
-        prompt_window = deque()
-
-        print("Timestamps:")
-        pprint(merged)
+        merged = merge_timestamps(seconds_timestamps, config.max_silent_period, config.max_merge_size, 
+                                  config.segment_padding_left, config.segment_padding_right)
 
         if config.non_speech_strategy != NonSpeechStrategy.SKIP:
             max_audio_duration = get_audio_duration(audio)
@@ -138,6 +129,32 @@ class AbstractTranscription(ABC):
 
             print("Transcribing non-speech:")
             pprint(merged)
+        return merged
+
+    def transcribe(self, audio: str, whisperCallable: WhisperCallback, config: TranscriptionConfig):
+        """
+        Transcribe the given audo file.
+
+        Parameters
+        ----------
+        audio: str
+            The audio file.
+        whisperCallable: WhisperCallback
+            A callback object to call to transcribe each segment.
+
+        Returns
+        -------
+        A list of start and end timestamps, in fractional seconds.
+        """
+
+        # Get speech timestamps from full audio file
+        merged = self.get_merged_timestamps(audio, config)
+
+        # A deque of transcribed segments that is passed to the next segment as a prompt
+        prompt_window = deque()
+
+        print("Processing timestamps:")
+        pprint(merged)
 
         result = {
             'text': "",
@@ -147,7 +164,7 @@ class AbstractTranscription(ABC):
         languageCounter = Counter()
         detected_language = None
 
-        segment_index = -1
+        segment_index = config.initial_segment_index
 
         # For each time segment, run whisper
         for segment in merged:
@@ -172,7 +189,7 @@ class AbstractTranscription(ABC):
 
             print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", 
                   segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt, "language: ", detected_language)
-            segment_result = whisperCallable(segment_audio, segment_index, segment_prompt, detected_language)
+            segment_result = whisperCallable.invoke(segment_audio, segment_index, segment_prompt, detected_language)
 
             adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
@@ -372,6 +389,7 @@ class AbstractTranscription(ABC):
                 'end': end * factor
             })
         return result
+
 
 class VadSileroTranscription(AbstractTranscription):
     def __init__(self, sampling_rate: int = 16000):
