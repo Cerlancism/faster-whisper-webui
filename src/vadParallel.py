@@ -1,3 +1,4 @@
+import multiprocessing
 from src.vad import AbstractTranscription, TranscriptionConfig
 from src.whisperContainer import WhisperCallback
 
@@ -22,6 +23,7 @@ class ParallelTranscription(AbstractTranscription):
         merged = transcription.get_merged_timestamps(audio, config)
 
         # Split into a list for each device
+        # TODO: Split by time instead of by number of chunks
         merged_split = self._chunks(merged, len(merged) // len(devices))
 
         # Parameters that will be passed to the transcribe function
@@ -43,7 +45,10 @@ class ParallelTranscription(AbstractTranscription):
             'language': None
         }
 
-        with Pool(len(devices)) as p:
+        # Spawn a separate process for each device
+        context = multiprocessing.get_context('spawn')
+
+        with context.Pool(len(devices)) as p:
             # Run the transcription in parallel
             results = p.starmap(self.transcribe, parameters)
 
