@@ -32,11 +32,33 @@ python cli.py \
 [--vad_max_merge_size VAD_MAX_MERGE_SIZE] \
 [--vad_padding VAD_PADDING] \
 [--vad_prompt_window VAD_PROMPT_WINDOW]
+[--vad_parallel_devices COMMA_DELIMITED_DEVICES]
 ```
 In addition, you may also use URL's in addition to file paths as input.
 ```
 python cli.py --model large --vad silero-vad --language Japanese "https://www.youtube.com/watch?v=4cICErqqRSM"
 ```
+
+## Parallel Execution
+
+You can also run both the Web-UI or the CLI on multiple GPUs in parallel, using the `vad_parallel_devices` option. This takes a comma-delimited list of 
+device IDs (0, 1, etc.) that Whisper should be distributed to and run on concurrently:
+```
+python cli.py --model large --vad silero-vad --language Japanese --vad_parallel_devices 0,1 "https://www.youtube.com/watch?v=4cICErqqRSM"
+```
+
+Note that this requires a VAD to function properly, otherwise only the first GPU will be used. Though you could use `period-vad` to avoid taking the hit
+of running Silero-Vad, at a slight cost to accuracy.
+
+This is achieved by creating N child processes (where N is the number of selected devices), where Whisper is run concurrently. In `app.py`, you can also 
+set the `vad_process_timeout` option, which configures the number of seconds until a process is killed due to inactivity, freeing RAM and video memory. 
+The default value is 30 minutes.
+
+```
+python app.py --input_audio_max_duration -1 --vad_parallel_devices 0,1 --vad_process_timeout 3600
+```
+
+You may also use `vad_process_timeout` with a single device (`--vad_parallel_devices 0`), if you prefer to free video memory after a period of time.
 
 # Docker
 
