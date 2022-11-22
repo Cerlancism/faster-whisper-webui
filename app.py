@@ -293,7 +293,7 @@ def create_ui(input_audio_max_duration, share=False, server_name: str = None, se
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input_audio_max_duration", type=int, default=600, help="Maximum audio file length in seconds, or -1 for no limit.")
+    parser.add_argument("--input_audio_max_duration", type=int, default=DEFAULT_INPUT_AUDIO_MAX_DURATION, help="Maximum audio file length in seconds, or -1 for no limit.")
     parser.add_argument("--share", type=bool, default=False, help="True to share the app on HuggingFace.")
     parser.add_argument("--server_name", type=str, default=None, help="The host or IP to bind to. If None, bind to localhost.")
     parser.add_argument("--server_port", type=int, default=7860, help="The port to bind to.")
