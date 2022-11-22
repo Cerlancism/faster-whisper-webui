@@ -1,3 +1,4 @@
+import math
 from typing import Iterator
 import argparse
 
@@ -5,12 +6,11 @@ from io import StringIO
 import os
 import pathlib
 import tempfile
-from src.vadParallel import ParallelTranscription
+from src.vadParallel import ParallelContext, ParallelTranscription
 
-from src.whisperContainer import WhisperContainer
+from src.whisperContainer import WhisperContainer, WhisperModelCache
 
 # External programs
-import whisper
 import ffmpeg
 
 # UI
@@ -50,13 +50,15 @@ LANGUAGES = [
 ]
 
 class WhisperTranscriber:
-    def __init__(self, inputAudioMaxDuration: float = DEFAULT_INPUT_AUDIO_MAX_DURATION, deleteUploadedFiles: bool = DELETE_UPLOADED_FILES):
-        self.model_cache = dict()
+    def __init__(self, input_audio_max_duration: float = DEFAULT_INPUT_AUDIO_MAX_DURATION, vad_process_timeout: float = None, delete_uploaded_files: bool = DELETE_UPLOADED_FILES):
+        self.model_cache = WhisperModelCache()
         self.parallel_device_list = None
+        self.parallel_context = None
+        self.vad_process_timeout = vad_process_timeout
 
         self.vad_model = None
-        self.inputAudioMaxDuration = inputAudioMaxDuration
-        self.deleteUploadedFiles = deleteUploadedFiles
+        self.inputAudioMaxDuration = input_audio_max_duration
+        self.deleteUploadedFiles = delete_uploaded_files
 
     def transcribe_webui(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow):
         try:
@@ -66,11 +68,7 @@ class WhisperTranscriber:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                model = self.model_cache.get(selectedModel, None)
-                
-                if not model:
-                    model = WhisperContainer(selectedModel)
-                    self.model_cache[selectedModel] = model
+                model = WhisperContainer(model_name=selectedModel, cache=self.model_cache)
 
                 # Execute whisper
                 result = self.transcribe_file(model, source, selectedLanguage, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
@@ -124,18 +122,34 @@ class WhisperTranscriber:
             result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config)
 
         else:
-            # Default VAD
-            result = whisperCallable(audio_path, 0, None, None)
+            if (self._has_parallel_devices()):
+                # Use a simple period transcription instead, as we need to use the parallel context
+                periodic_vad = VadPeriodicTranscription()
+                period_config = PeriodicTranscriptionConfig(periodic_duration=math.inf, max_prompt_window=1)
+
+                result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config)
+            else:
+                # Default VAD
+                result = whisperCallable(audio_path, 0, None, None)
 
         return result
 
     def process_vad(self, audio_path, whisperCallable, vadModel: AbstractTranscription, vadConfig: TranscriptionConfig):
-        if (self.parallel_device_list is None or len(self.parallel_device_list) == 0):
+        if (not self._has_parallel_devices()):
             # No parallel devices, so just run the VAD and Whisper in sequence
             return vadModel.transcribe(audio_path, whisperCallable, vadConfig)
 
-        parallell_vad = ParallelTranscription()
-        return parallell_vad.transcribe_parallel(transcription=vadModel, audio=audio_path, whisperCallable=whisperCallable, config=vadConfig, devices=self.parallel_device_list)
+        # Create parallel context if needed
+        if (self.parallel_context is None):
+            # Create a context wih processes and automatically clear the pool after 1 hour of inactivity
+            self.parallel_context = ParallelContext(num_processes=len(self.parallel_device_list), auto_cleanup_timeout_seconds=self.vad_process_timeout)
+
+        parallel_vad = ParallelTranscription()
+        return parallel_vad.transcribe_parallel(transcription=vadModel, audio=audio_path, whisperCallable=whisperCallable,  
+                                                config=vadConfig, devices=self.parallel_device_list, parallel_context=self.parallel_context) 
+
+    def _has_parallel_devices(self):
+        return self.parallel_device_list is not None and len(self.parallel_device_list) > 0
 
     def _concat_prompt(self, prompt1, prompt2):
         if (prompt1 is None):
@@ -177,7 +191,7 @@ class WhisperTranscriber:
         return output_files, text, vtt
 
     def clear_cache(self):
-        self.model_cache = dict()
+        self.model_cache.clear()
         self.vad_model = None
 
     def __get_source(self, urlData, uploadFile, microphoneData):
@@ -229,9 +243,16 @@ class WhisperTranscriber:
 
         return file.name
 
+    def close(self):
+        self.clear_cache()
 
-def create_ui(inputAudioMaxDuration, share=False, server_name: str = None, server_port: int = 7860, vad_parallel_devices: str = None):
-    ui = WhisperTranscriber(inputAudioMaxDuration)
+        if (self.parallel_context is not None):
+            self.parallel_context.close()
+
+
+def create_ui(input_audio_max_duration, share=False, server_name: str = None, server_port: int = 7860, 
+              default_model_name: str = "medium", default_vad: str = None, vad_parallel_devices: str = None, vad_process_timeout: float = None):
+    ui = WhisperTranscriber(input_audio_max_duration, vad_process_timeout)
 
     # Specify a list of devices to use for parallel processing
     ui.parallel_device_list = [ device.strip() for device in vad_parallel_devices.split(",") ] if vad_parallel_devices else None
@@ -242,19 +263,19 @@ def create_ui(inputAudioMaxDuration, share=False, server_name: str = None, serve
 
     ui_description += "\n\n\n\nFor longer audio files (>10 minutes) not in English, it is recommended that you select Silero VAD (Voice Activity Detector) in the VAD option."
 
-    if inputAudioMaxDuration > 0:
-        ui_description += "\n\n" + "Max audio file length: " + str(inputAudioMaxDuration) + " s"
+    if input_audio_max_duration > 0:
+        ui_description += "\n\n" + "Max audio file length: " + str(input_audio_max_duration) + " s"
 
     ui_article = "Read the [documentation here](https://huggingface.co/spaces/aadnk/whisper-webui/blob/main/docs/options.md)"
 
     demo = gr.Interface(fn=ui.transcribe_webui, description=ui_description, article=ui_article, inputs=[
-        gr.Dropdown(choices=["tiny", "base", "small", "medium", "large"], value="medium", label="Model"),
+        gr.Dropdown(choices=["tiny", "base", "small", "medium", "large"], value=default_model_name, label="Model"),
         gr.Dropdown(choices=sorted(LANGUAGES), label="Language"),
         gr.Text(label="URL (YouTube, etc.)"),
         gr.Audio(source="upload", type="filepath", label="Upload Audio"), 
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task"),
-        gr.Dropdown(choices=["none", "silero-vad", "silero-vad-skip-gaps", "silero-vad-expand-into-gaps", "periodic-vad"], label="VAD"),
+        gr.Dropdown(choices=["none", "silero-vad", "silero-vad-skip-gaps", "silero-vad-expand-into-gaps", "periodic-vad"], value=default_vad, label="VAD"),
         gr.Number(label="VAD - Merge Window (s)", precision=0, value=5),
         gr.Number(label="VAD - Max Merge Size (s)", precision=0, value=30),
         gr.Number(label="VAD - Padding (s)", precision=None, value=1),
@@ -265,15 +286,21 @@ def create_ui(inputAudioMaxDuration, share=False, server_name: str = None, serve
         gr.Text(label="Segments")
     ])
 
-    demo.launch(share=share, server_name=server_name, server_port=server_port)  
+    demo.launch(share=share, server_name=server_name, server_port=server_port)
+    
+    # Clean up
+    ui.close()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--inputAudioMaxDuration", type=int, default=600, help="Maximum audio file length in seconds, or -1 for no limit.")
+    parser.add_argument("--input_audio_max_duration", type=int, default=600, help="Maximum audio file length in seconds, or -1 for no limit.")
     parser.add_argument("--share", type=bool, default=False, help="True to share the app on HuggingFace.")
     parser.add_argument("--server_name", type=str, default=None, help="The host or IP to bind to. If None, bind to localhost.")
     parser.add_argument("--server_port", type=int, default=7860, help="The port to bind to.")
-    parser.add_argument("--vad_parallel_devices", type=str, default="0,1", help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.")
+    parser.add_argument("--default_model_name", type=str, default="medium", help="The default model name.")
+    parser.add_argument("--default_vad", type=str, default="silero-vad", help="The default VAD.")
+    parser.add_argument("--vad_parallel_devices", type=str, default="", help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.")
+    parser.add_argument("--vad_process_timeout", type=float, default="1800", help="The number of seconds before inactivate processes are terminated. Use 0 to close processes immediately, or None for no timeout.")
 
     args = parser.parse_args().__dict__
     create_ui(**args)

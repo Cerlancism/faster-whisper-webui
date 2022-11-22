@@ -74,7 +74,7 @@ def cli():
     vad_prompt_window = args.pop("vad_prompt_window")
 
     model = whisper.load_model(model_name, device=device, download_root=model_dir)
-    transcriber = WhisperTranscriber(deleteUploadedFiles=False)
+    transcriber = WhisperTranscriber(delete_uploaded_files=False)
     transcriber.parallel_device_list = args.pop("vad_parallel_devices")
 
     for audio_path in args.pop("audio"):

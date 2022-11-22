@@ -1,18 +1,44 @@
 # External programs
 import whisper
 
+class WhisperModelCache:
+    def __init__(self):
+        self._cache = dict()
+
+    def get(self, model_name, device: str = None):
+        key = model_name + ":" + (device if device else '')
+
+        result = self._cache.get(key)
+
+        if result is None:
+            print("Loading whisper model " + model_name)
+            result = whisper.load_model(name=model_name, device=device)
+            self._cache[key] = result
+        return result
+
+    def clear(self):
+        self._cache.clear()
+
+# A global cache of models. This is mainly used by the daemon processes to avoid loading the same model multiple times.
+GLOBAL_WHISPER_MODEL_CACHE = WhisperModelCache()
+
 class WhisperContainer:
-    def __init__(self, model_name: str, device: str = None):
+    def __init__(self, model_name: str, device: str = None, cache: WhisperModelCache = None):
         self.model_name = model_name
         self.device = device
+        self.cache = cache
 
         # Will be created on demand
         self.model = None
     
     def get_model(self):
         if self.model is None:
-            print("Loading model " + self.model_name)
-            self.model = whisper.load_model(self.model_name, device=self.device)
+
+            if (self.cache is None):
+                print("Loading whisper model " + self.model_name)
+                self.model = whisper.load_model(self.model_name, device=self.device)
+            else:
+                self.model = self.cache.get(self.model_name, device=self.device)
         return self.model
 
     def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, **decodeOptions: dict):
@@ -44,6 +70,8 @@ class WhisperContainer:
         self.model_name = state["model_name"]
         self.device = state["device"]
         self.model = None
+        # Depickled objects must use the global cache
+        self.cache = GLOBAL_WHISPER_MODEL_CACHE
 
 
 class WhisperCallback:
