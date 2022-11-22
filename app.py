@@ -60,6 +60,9 @@ class WhisperTranscriber:
         self.inputAudioMaxDuration = input_audio_max_duration
         self.deleteUploadedFiles = delete_uploaded_files
 
+    def set_parallel_devices(self, vad_parallel_devices: str):
+        self.parallel_device_list = [ device.strip() for device in vad_parallel_devices.split(",") ] if vad_parallel_devices else None
+
     def transcribe_webui(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow):
         try:
             source, sourceName = self.__get_source(urlData, uploadFile, microphoneData)
@@ -255,7 +258,7 @@ def create_ui(input_audio_max_duration, share=False, server_name: str = None, se
     ui = WhisperTranscriber(input_audio_max_duration, vad_process_timeout)
 
     # Specify a list of devices to use for parallel processing
-    ui.parallel_device_list = [ device.strip() for device in vad_parallel_devices.split(",") ] if vad_parallel_devices else None
+    ui.set_parallel_devices(vad_parallel_devices)
 
     ui_description = "Whisper is a general-purpose speech recognition model. It is trained on a large dataset of diverse " 
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "

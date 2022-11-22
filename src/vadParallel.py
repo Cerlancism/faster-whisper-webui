@@ -88,14 +88,20 @@ class ParallelTranscription(AbstractTranscription):
 
         # Split into a list for each device
         # TODO: Split by time instead of by number of chunks
-        merged_split = self._chunks(merged, max(len(merged) // len(devices), 1))
+        merged_split = list(self._split(merged, len(devices)))
 
         # Parameters that will be passed to the transcribe function
         parameters = []
         segment_index = config.initial_segment_index
 
         for i in range(len(merged_split)):
-            device_segment_list = merged_split[i]
+            device_segment_list = list(merged_split[i])
+            device_id = devices[i]
+
+            if (len(device_segment_list) <= 0):
+                continue
+
+            print("Device " + device_id + " (index " + str(i) + ") has " + str(len(device_segment_list)) + " segments")
 
             # Create a new config with the given device ID
             device_config = ParallelTranscriptionConfig(devices[i], device_segment_list, segment_index, config)
@@ -159,7 +165,8 @@ class ParallelTranscription(AbstractTranscription):
             os.environ["CUDA_VISIBLE_DEVICES"] = config.device_id
         return super().transcribe(audio, whisperCallable, config)
 
-    def _chunks(self, lst, n):
-        """Yield successive n-sized chunks from lst."""
-        return [lst[i:i + n] for i in range(0, len(lst), n)]
+    def _split(self, a, n):
+        """Split a list into n approximately equal parts."""
+        k, m = divmod(len(a), n)
+        return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 

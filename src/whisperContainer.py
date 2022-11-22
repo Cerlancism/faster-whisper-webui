@@ -23,9 +23,10 @@ class WhisperModelCache:
 GLOBAL_WHISPER_MODEL_CACHE = WhisperModelCache()
 
 class WhisperContainer:
-    def __init__(self, model_name: str, device: str = None, cache: WhisperModelCache = None):
+    def __init__(self, model_name: str, device: str = None, download_root: str = None, cache: WhisperModelCache = None):
         self.model_name = model_name
         self.device = device
+        self.download_root = download_root
         self.cache = cache
 
         # Will be created on demand
@@ -36,7 +37,7 @@ class WhisperContainer:
 
             if (self.cache is None):
                 print("Loading whisper model " + self.model_name)
-                self.model = whisper.load_model(self.model_name, device=self.device)
+                self.model = whisper.load_model(self.model_name, device=self.device, download_root=self.download_root)
             else:
                 self.model = self.cache.get(self.model_name, device=self.device)
         return self.model
