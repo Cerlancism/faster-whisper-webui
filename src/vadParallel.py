@@ -88,7 +88,7 @@ class ParallelTranscription(AbstractTranscription):
 
         # Split into a list for each device
         # TODO: Split by time instead of by number of chunks
-        merged_split = self._chunks(merged, len(merged) // len(devices))
+        merged_split = self._chunks(merged, max(len(merged) // len(devices), 1))
 
         # Parameters that will be passed to the transcribe function
         parameters = []
