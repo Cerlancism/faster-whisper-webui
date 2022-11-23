@@ -17,4 +17,4 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /opt/whisper-webui/
 ENTRYPOINT ["python3"]
-CMD ["app-network.py"]
+CMD ["app.py", "--input_audio_max_duration -1", "--server_name 0.0.0.0"]

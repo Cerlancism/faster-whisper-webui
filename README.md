@@ -51,19 +51,19 @@ Note that this requires a VAD to function properly, otherwise only the first GPU
 of running Silero-Vad, at a slight cost to accuracy.
 
 This is achieved by creating N child processes (where N is the number of selected devices), where Whisper is run concurrently. In `app.py`, you can also 
-set the `vad_process_timeout` option, which configures the number of seconds until a process is killed due to inactivity, freeing RAM and video memory. 
+set the `vad_process_timeout` option. This configures the number of seconds until a process is killed due to inactivity, freeing RAM and video memory. 
 The default value is 30 minutes.
 
 ```
 python app.py --input_audio_max_duration -1 --vad_parallel_devices 0,1 --vad_process_timeout 3600
 ```
 
-You may also use `vad_process_timeout` with a single device (`--vad_parallel_devices 0`), if you prefer to free video memory after a period of time.
+You may also use `vad_process_timeout` with a single device (`--vad_parallel_devices 0`), if you prefer to always free video memory after a period of time.
 
 # Docker
 
-To run it in Docker, first install Docker and optionally the NVIDIA Container Toolkit in order to use the GPU. Then 
-check out this repository and build an image:
+To run it in Docker, first install Docker and optionally the NVIDIA Container Toolkit in order to use the GPU. 
+Then either use the GitLab hosted container below, or check out this repository and build an image:
 ```
 sudo docker build -t whisper-webui:1 .
 ```
@@ -78,11 +78,37 @@ Leave out "--gpus=all" if you don't have access to a GPU with enough memory, and
 sudo docker run -d -p 7860:7860 whisper-webui:1
 ```
 
+# GitLab Docker Registry
+
+This Docker container is also hosted on GitLab:
+
+```
+sudo docker run -d --gpus=all -p 7860:7860 registry.gitlab.com/aadnk/whisper-webui:latest
+```
+
+## Custom Arguments
+
+You can also pass custom arguments to `app.py` in the Docker container, for instance to be able to use all the GPUs in parallel:
+```
+sudo docker run -d --gpus all -p 7860:7860 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper --restart=on-failure:15 registry.gitlab.com/aadnk/whisper-webui:latest \
+app.py --input_audio_max_duration -1 --server_name 0.0.0.0 --vad_parallel_devices 0,1 --default_vad silero-vad --default_model_name large
+```
+
+You can also call `cli.py` the same way:
+```
+sudo docker run --gpus all \
+--mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper \
+--mount type=bind,source=${PWD},target=/app/data \
+registry.gitlab.com/aadnk/whisper-webui:latest \
+cli.py --model large --vad_parallel_devices 0,1 --vad silero-vad \
+--output_dir /app/data /app/data/YOUR-FILE-HERE.mp4
+```
+
 ## Caching
 
 Note that the models themselves are currently not included in the Docker images, and will be downloaded on the demand.
 To avoid this, bind the directory /root/.cache/whisper to some directory on the host (for instance /home/administrator/.cache/whisper), where you can (optionally) 
 prepopulate the directory with the different Whisper models. 
 ```
-sudo docker run -d --gpus=all -p 7860:7860 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper whisper-webui:1
+sudo docker run -d --gpus=all -p 7860:7860 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper registry.gitlab.com/aadnk/whisper-webui:latest
 ```
