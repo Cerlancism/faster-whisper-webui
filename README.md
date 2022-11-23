@@ -44,7 +44,8 @@ python cli.py --model large --vad silero-vad --language Japanese "https://www.yo
 You can also run both the Web-UI or the CLI on multiple GPUs in parallel, using the `vad_parallel_devices` option. This takes a comma-delimited list of 
 device IDs (0, 1, etc.) that Whisper should be distributed to and run on concurrently:
 ```
-python cli.py --model large --vad silero-vad --language Japanese --vad_parallel_devices 0,1 "https://www.youtube.com/watch?v=4cICErqqRSM"
+python cli.py --model large --vad silero-vad --language Japanese \
+--vad_parallel_devices 0,1 "https://www.youtube.com/watch?v=4cICErqqRSM"
 ```
 
 Note that this requires a VAD to function properly, otherwise only the first GPU will be used. Though you could use `period-vad` to avoid taking the hit
@@ -90,8 +91,11 @@ sudo docker run -d --gpus=all -p 7860:7860 registry.gitlab.com/aadnk/whisper-web
 
 You can also pass custom arguments to `app.py` in the Docker container, for instance to be able to use all the GPUs in parallel:
 ```
-sudo docker run -d --gpus all -p 7860:7860 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper --restart=on-failure:15 registry.gitlab.com/aadnk/whisper-webui:latest \
-app.py --input_audio_max_duration -1 --server_name 0.0.0.0 --vad_parallel_devices 0,1 --default_vad silero-vad --default_model_name large
+sudo docker run -d --gpus all -p 7860:7860 \
+--mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper \
+--restart=on-failure:15 registry.gitlab.com/aadnk/whisper-webui:latest \
+app.py --input_audio_max_duration -1 --server_name 0.0.0.0 --vad_parallel_devices 0,1 \
+--default_vad silero-vad --default_model_name large
 ```
 
 You can also call `cli.py` the same way:
@@ -110,5 +114,7 @@ Note that the models themselves are currently not included in the Docker images,
 To avoid this, bind the directory /root/.cache/whisper to some directory on the host (for instance /home/administrator/.cache/whisper), where you can (optionally) 
 prepopulate the directory with the different Whisper models. 
 ```
-sudo docker run -d --gpus=all -p 7860:7860 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper registry.gitlab.com/aadnk/whisper-webui:latest
+sudo docker run -d --gpus=all -p 7860:7860 \
+--mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper \
+registry.gitlab.com/aadnk/whisper-webui:latest
 ```
