@@ -126,6 +126,8 @@ class ParallelTranscription(AbstractTranscription):
 
         created_context = False
 
+        perf_start_gpu = time.perf_counter()
+
         # Spawn a separate process for each device
         try:
             if (gpu_parallel_context is None):
@@ -154,6 +156,9 @@ class ParallelTranscription(AbstractTranscription):
             # Always close the context if we created it
             if (created_context):
                 gpu_parallel_context.close()
+
+        perf_end_gpu = time.perf_counter()
+        print("Parallel transcription took " + str(perf_end_gpu - perf_start_gpu) + " seconds")
 
         return merged
 
