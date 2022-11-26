@@ -5,7 +5,7 @@ import sys
 
 sys.path.append('../whisper-webui')
 
-from src.vad import AbstractTranscription, VadSileroTranscription
+from src.vad import AbstractTranscription, TranscriptionConfig, VadSileroTranscription
 
 class TestVad(unittest.TestCase):
     def __init__(self, *args, **kwargs):
@@ -55,7 +55,7 @@ class MockVadTranscription(AbstractTranscription):
         # For mocking, this just returns a simple numppy array
         return np.array([start_time_seconds, duration_seconds], dtype=np.float64)
 
-    def get_transcribe_timestamps(self, audio: str):
+    def get_transcribe_timestamps(self, audio: str, config: TranscriptionConfig, start_time: float, duration: float):
         result = []
 
         result.append( {  'start': 30, 'end': 60 } )

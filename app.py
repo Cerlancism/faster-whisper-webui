@@ -6,9 +6,8 @@ from io import StringIO
 import os
 import pathlib
 import tempfile
+from src.modelCache import ModelCache
 from src.vadParallel import ParallelContext, ParallelTranscription
-
-from src.whisperContainer import WhisperContainer, WhisperModelCache
 
 # External programs
 import ffmpeg
@@ -19,6 +18,7 @@ import gradio as gr
 from src.download import ExceededMaximumDuration, download_url
 from src.utils import slugify, write_srt, write_vtt
 from src.vad import AbstractTranscription, NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
+from src.whisperContainer import WhisperContainer
 
 # Limitations (set to -1 to disable)
 DEFAULT_INPUT_AUDIO_MAX_DURATION = 600 # seconds
@@ -50,11 +50,13 @@ LANGUAGES = [
 ]
 
 class WhisperTranscriber:
-    def __init__(self, input_audio_max_duration: float = DEFAULT_INPUT_AUDIO_MAX_DURATION, vad_process_timeout: float = None, delete_uploaded_files: bool = DELETE_UPLOADED_FILES):
-        self.model_cache = WhisperModelCache()
+    def __init__(self, input_audio_max_duration: float = DEFAULT_INPUT_AUDIO_MAX_DURATION, vad_process_timeout: float = None, vad_cpu_cores: int = 1, delete_uploaded_files: bool = DELETE_UPLOADED_FILES):
+        self.model_cache = ModelCache()
         self.parallel_device_list = None
-        self.parallel_context = None
+        self.gpu_parallel_context = None
+        self.cpu_parallel_context = None
         self.vad_process_timeout = vad_process_timeout
+        self.vad_cpu_cores = vad_cpu_cores
 
         self.vad_model = None
         self.inputAudioMaxDuration = input_audio_max_duration
@@ -142,17 +144,27 @@ class WhisperTranscriber:
             # No parallel devices, so just run the VAD and Whisper in sequence
             return vadModel.transcribe(audio_path, whisperCallable, vadConfig)
 
+        gpu_devices = self.parallel_device_list
+
+        if (gpu_devices is None or len(gpu_devices) == 0):
+            # No GPU devices specified, pass the current environment variable to the first GPU process. This may be NULL.
+            gpu_devices = [os.environ.get("CUDA_VISIBLE_DEVICES", None)]
+
         # Create parallel context if needed
-        if (self.parallel_context is None):
+        if (self.gpu_parallel_context is None):
             # Create a context wih processes and automatically clear the pool after 1 hour of inactivity
-            self.parallel_context = ParallelContext(num_processes=len(self.parallel_device_list), auto_cleanup_timeout_seconds=self.vad_process_timeout)
+            self.gpu_parallel_context = ParallelContext(num_processes=len(gpu_devices), auto_cleanup_timeout_seconds=self.vad_process_timeout)
+        # We also need a CPU context for the VAD
+        if (self.cpu_parallel_context is None):
+            self.cpu_parallel_context = ParallelContext(num_processes=self.vad_cpu_cores, auto_cleanup_timeout_seconds=self.vad_process_timeout)
 
         parallel_vad = ParallelTranscription()
         return parallel_vad.transcribe_parallel(transcription=vadModel, audio=audio_path, whisperCallable=whisperCallable,  
-                                                config=vadConfig, devices=self.parallel_device_list, parallel_context=self.parallel_context) 
+                                                config=vadConfig, cpu_device_count=self.vad_cpu_cores, gpu_devices=gpu_devices, 
+                                                cpu_parallel_context=self.cpu_parallel_context, gpu_parallel_context=self.gpu_parallel_context) 
 
     def _has_parallel_devices(self):
-        return self.parallel_device_list is not None and len(self.parallel_device_list) > 0
+        return (self.parallel_device_list is not None and len(self.parallel_device_list) > 0) or self.vad_cpu_cores > 1
 
     def _concat_prompt(self, prompt1, prompt2):
         if (prompt1 is None):
@@ -249,13 +261,15 @@ class WhisperTranscriber:
     def close(self):
         self.clear_cache()
 
-        if (self.parallel_context is not None):
-            self.parallel_context.close()
+        if (self.gpu_parallel_context is not None):
+            self.gpu_parallel_context.close()
+        if (self.cpu_parallel_context is not None):
+            self.cpu_parallel_context.close()
 
 
 def create_ui(input_audio_max_duration, share=False, server_name: str = None, server_port: int = 7860, 
-              default_model_name: str = "medium", default_vad: str = None, vad_parallel_devices: str = None, vad_process_timeout: float = None):
-    ui = WhisperTranscriber(input_audio_max_duration, vad_process_timeout)
+              default_model_name: str = "medium", default_vad: str = None, vad_parallel_devices: str = None, vad_process_timeout: float = None, vad_cpu_cores: int = 1):
+    ui = WhisperTranscriber(input_audio_max_duration, vad_process_timeout, vad_cpu_cores)
 
     # Specify a list of devices to use for parallel processing
     ui.set_parallel_devices(vad_parallel_devices)
@@ -303,6 +317,7 @@ if __name__ == '__main__':
     parser.add_argument("--default_model_name", type=str, default="medium", help="The default model name.")
     parser.add_argument("--default_vad", type=str, default="silero-vad", help="The default VAD.")
     parser.add_argument("--vad_parallel_devices", type=str, default="", help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.")
+    parser.add_argument("--vad_cpu_cores", type=int, default=1, help="The number of CPU cores to use for VAD pre-processing.")
     parser.add_argument("--vad_process_timeout", type=float, default="1800", help="The number of seconds before inactivate processes are terminated. Use 0 to close processes immediately, or None for no timeout.")
 
     args = parser.parse_args().__dict__

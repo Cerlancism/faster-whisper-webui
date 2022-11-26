@@ -1,29 +1,10 @@
 # External programs
 import whisper
 
-class WhisperModelCache:
-    def __init__(self):
-        self._cache = dict()
-
-    def get(self, model_name, device: str = None):
-        key = model_name + ":" + (device if device else '')
-
-        result = self._cache.get(key)
-
-        if result is None:
-            print("Loading whisper model " + model_name)
-            result = whisper.load_model(name=model_name, device=device)
-            self._cache[key] = result
-        return result
-
-    def clear(self):
-        self._cache.clear()
-
-# A global cache of models. This is mainly used by the daemon processes to avoid loading the same model multiple times.
-GLOBAL_WHISPER_MODEL_CACHE = WhisperModelCache()
+from src.modelCache import GLOBAL_MODEL_CACHE, ModelCache
 
 class WhisperContainer:
-    def __init__(self, model_name: str, device: str = None, download_root: str = None, cache: WhisperModelCache = None):
+    def __init__(self, model_name: str, device: str = None, download_root: str = None, cache: ModelCache = None):
         self.model_name = model_name
         self.device = device
         self.download_root = download_root
@@ -36,11 +17,15 @@ class WhisperContainer:
         if self.model is None:
 
             if (self.cache is None):
-                print("Loading whisper model " + self.model_name)
-                self.model = whisper.load_model(self.model_name, device=self.device, download_root=self.download_root)
+                self.model = self._create_model()
             else:
-                self.model = self.cache.get(self.model_name, device=self.device)
+                model_key = "WhisperContainer." + self.model_name + ":" + (self.device if self.device else '')
+                self.model = self.cache.get(model_key, self._create_model)
         return self.model
+
+    def _create_model(self):
+        print("Loading whisper model " + self.model_name)
+        return whisper.load_model(self.model_name, device=self.device, download_root=self.download_root)
 
     def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, **decodeOptions: dict):
         """
@@ -65,14 +50,15 @@ class WhisperContainer:
 
     # This is required for multiprocessing
     def __getstate__(self):
-        return { "model_name": self.model_name, "device": self.device }
+        return { "model_name": self.model_name, "device": self.device, "download_root": self.download_root }
 
     def __setstate__(self, state):
         self.model_name = state["model_name"]
         self.device = state["device"]
+        self.download_root = state["download_root"]
         self.model = None
         # Depickled objects must use the global cache
-        self.cache = GLOBAL_WHISPER_MODEL_CACHE
+        self.cache = GLOBAL_MODEL_CACHE
 
 
 class WhisperCallback:

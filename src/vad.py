@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from collections import Counter, deque
+import time
 
 from typing import Any, Deque, Iterator, List, Dict
 
 from pprint import pprint
+from src.modelCache import GLOBAL_MODEL_CACHE, ModelCache
 
 from src.segments import merge_timestamps
 from src.whisperContainer import WhisperCallback
@@ -76,7 +78,7 @@ class AbstractTranscription(ABC):
         return load_audio(str, self.sampling_rate, start_time, duration)
 
     @abstractmethod
-    def get_transcribe_timestamps(self, audio: str, config: TranscriptionConfig):
+    def get_transcribe_timestamps(self, audio: str, config: TranscriptionConfig, start_time: float, end_time: float):
         """
         Get the start and end timestamps of the sections that should be transcribed by this VAD method.
 
@@ -93,10 +95,10 @@ class AbstractTranscription(ABC):
         """
         return 
 
-    def get_merged_timestamps(self, audio: str, config: TranscriptionConfig):
+    def get_merged_timestamps(self, timestamps: List[Dict[str, Any]], config: TranscriptionConfig, total_duration: float):
         """
         Get the start and end timestamps of the sections that should be transcribed by this VAD method,
-        after merging the segments using the specified configuration.
+        after merging the given segments using the specified configuration.
 
         Parameters
         ----------
@@ -109,21 +111,17 @@ class AbstractTranscription(ABC):
         -------
         A list of start and end timestamps, in fractional seconds.
         """
-        seconds_timestamps = self.get_transcribe_timestamps(audio, config)
-
-        merged = merge_timestamps(seconds_timestamps, config.max_silent_period, config.max_merge_size, 
+        merged = merge_timestamps(timestamps, config.max_silent_period, config.max_merge_size, 
                                   config.segment_padding_left, config.segment_padding_right)
 
         if config.non_speech_strategy != NonSpeechStrategy.SKIP:
-            max_audio_duration = get_audio_duration(audio)
-
             # Expand segments to include the gaps between them
             if (config.non_speech_strategy == NonSpeechStrategy.CREATE_SEGMENT):
                 # When we have a prompt window, we create speech segments betwen each segment if we exceed the merge size
-                merged = self.fill_gaps(merged, total_duration=max_audio_duration, max_expand_size=config.max_merge_size)
+                merged = self.fill_gaps(merged, total_duration=total_duration, max_expand_size=config.max_merge_size)
             elif config.non_speech_strategy == NonSpeechStrategy.EXPAND_SEGMENT: 
                 # With no prompt window, it is better to just expand the segments (this effectively passes the prompt to the next segment)
-                merged = self.expand_gaps(merged, total_duration=max_audio_duration)
+                merged = self.expand_gaps(merged, total_duration=total_duration)
             else:
                 raise Exception("Unknown non-speech strategy: " + str(config.non_speech_strategy))
 
@@ -147,8 +145,11 @@ class AbstractTranscription(ABC):
         A list of start and end timestamps, in fractional seconds.
         """
 
+        max_audio_duration = get_audio_duration(audio)
+        timestamp_segments = self.get_transcribe_timestamps(audio, config, 0, max_audio_duration)
+
         # Get speech timestamps from full audio file
-        merged = self.get_merged_timestamps(audio, config)
+        merged = self.get_merged_timestamps(timestamp_segments, config, max_audio_duration)
 
         # A deque of transcribed segments that is passed to the next segment as a prompt
         prompt_window = deque()
@@ -392,22 +393,41 @@ class AbstractTranscription(ABC):
 
 
 class VadSileroTranscription(AbstractTranscription):
-    def __init__(self, sampling_rate: int = 16000):
+    def __init__(self, sampling_rate: int = 16000, cache: ModelCache = None):
         super().__init__(sampling_rate=sampling_rate)
+        self.model = None
+        self.cache = cache
+        self._initialize_model()
 
-        self.model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad')
-        (self.get_speech_timestamps, _, _, _, _) = utils
+    def _initialize_model(self):
+        if (self.cache is not None):
+            model_key = "VadSileroTranscription"
+            self.model, self.get_speech_timestamps = self.cache.get(model_key, self._create_model)
+            print("Loaded Silerio model from cache.")
+        else:
+            self.model, self.get_speech_timestamps = self._create_model()
+            print("Created Silerio model")
 
+    def _create_model(self):
+        model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad')
+        
+        # Silero does not benefit from multi-threading
+        torch.set_num_threads(1) # JIT
+        (get_speech_timestamps, _, _, _, _) = utils
 
-    def get_transcribe_timestamps(self, audio: str, config: TranscriptionConfig):
-        audio_duration = get_audio_duration(audio)
+        return model, get_speech_timestamps
+
+    def get_transcribe_timestamps(self, audio: str, config: TranscriptionConfig, start_time: float, end_time: float):
         result = []
 
-        # Divide procesisng of audio into chunks
-        chunk_start = 0.0
+        print("Getting timestamps from audio file: {}, start: {}, duration: {}".format(audio, start_time, end_time))
+        perf_start_time = time.perf_counter()
 
-        while (chunk_start < audio_duration):
-            chunk_duration = min(audio_duration - chunk_start, VAD_MAX_PROCESSING_CHUNK)
+        # Divide procesisng of audio into chunks
+        chunk_start = start_time
+
+        while (chunk_start < end_time):
+            chunk_duration = min(end_time - chunk_start, VAD_MAX_PROCESSING_CHUNK)
 
             print("Processing VAD in chunk from {} to {}".format(format_timestamp(chunk_start), format_timestamp(chunk_start + chunk_duration)))
             wav = self.get_audio_segment(audio, str(chunk_start), str(chunk_duration))
@@ -421,23 +441,35 @@ class VadSileroTranscription(AbstractTranscription):
             result.extend(adjusted)
             chunk_start += chunk_duration
 
+        perf_end_time = time.perf_counter()
+        print("VAD processing took {} seconds".format(perf_end_time - perf_start_time))
+
         return result
+
+    def __getstate__(self):
+        # We only need the sampling rate
+        return { 'sampling_rate': self.sampling_rate }
+
+    def __setstate__(self, state):
+        self.sampling_rate = state['sampling_rate']
+        self.model = None
+        # Use the global cache
+        self.cache = GLOBAL_MODEL_CACHE
+        self._initialize_model()
 
 # A very simple VAD that just marks every N seconds as speech
 class VadPeriodicTranscription(AbstractTranscription):
     def __init__(self, sampling_rate: int = 16000):
         super().__init__(sampling_rate=sampling_rate)
 
-    def get_transcribe_timestamps(self, audio: str, config: PeriodicTranscriptionConfig):
-        # Get duration in seconds
-        audio_duration = get_audio_duration(audio)
+    def get_transcribe_timestamps(self, audio: str, config: PeriodicTranscriptionConfig, start_time: float, end_time: float):
         result = []
 
         # Generate a timestamp every N seconds
-        start_timestamp = 0
+        start_timestamp = start_time
 
-        while (start_timestamp < audio_duration):
-            end_timestamp = min(start_timestamp + config.periodic_duration, audio_duration)
+        while (start_timestamp < end_time):
+            end_timestamp = min(start_timestamp + config.periodic_duration, end_time)
             segment_duration = end_timestamp - start_timestamp
 
             # Minimum duration is 1 second
