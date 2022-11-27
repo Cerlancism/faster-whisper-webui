@@ -59,7 +59,20 @@ The default value is 30 minutes.
 python app.py --input_audio_max_duration -1 --vad_parallel_devices 0,1 --vad_process_timeout 3600
 ```
 
+To execute the Silero VAD itself in parallel, use the `vad_cpu_cores` option:
+```
+python app.py --input_audio_max_duration -1 --vad_parallel_devices 0,1 --vad_process_timeout 3600 --vad_cpu_cores 4
+```
+
 You may also use `vad_process_timeout` with a single device (`--vad_parallel_devices 0`), if you prefer to always free video memory after a period of time.
+
+### Auto Parallel
+
+You can also set `auto_parallel` to `True`. This will set `vad_parallel_devices` to use all the GPU devices on the system, and `vad_cpu_cores` to be equal to the number of
+cores (up to 8):
+```
+python app.py --input_audio_max_duration -1 --auto_parallel True
+```
 
 # Docker
 
