@@ -76,8 +76,8 @@ def cli():
     vad_prompt_window = args.pop("vad_prompt_window")
     vad_cpu_cores = args.pop("vad_cpu_cores")
 
-    model = WhisperContainer(model_name, device=device, download_root=model_dir, vad_cpu_cores=vad_cpu_cores)
-    transcriber = WhisperTranscriber(delete_uploaded_files=False)
+    model = WhisperContainer(model_name, device=device, download_root=model_dir)
+    transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
 
     if (transcriber._has_parallel_devices()):
