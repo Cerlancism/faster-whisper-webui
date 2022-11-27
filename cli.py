@@ -34,6 +34,7 @@ def cli():
     parser.add_argument("--vad_prompt_window", type=optional_float, default=3, help="The window size of the prompt to pass to Whisper")
     parser.add_argument("--vad_cpu_cores", type=int, default=1, help="The number of CPU cores to use for VAD pre-processing.")
     parser.add_argument("--vad_parallel_devices", type=str, default="", help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.")
+    parser.add_argument("--auto_parallel", type=bool, default=False, help="True to use all available GPUs and CPU cores for processing. Use vad_cpu_cores/vad_parallel_devices to specify the number of CPU cores/GPUs to use.")
 
     parser.add_argument("--temperature", type=float, default=0, help="temperature to use for sampling")
     parser.add_argument("--best_of", type=optional_int, default=5, help="number of candidates when sampling with non-zero temperature")
@@ -75,10 +76,12 @@ def cli():
     vad_padding = args.pop("vad_padding")
     vad_prompt_window = args.pop("vad_prompt_window")
     vad_cpu_cores = args.pop("vad_cpu_cores")
+    auto_parallel = args.pop("auto_parallel")
 
     model = WhisperContainer(model_name, device=device, download_root=model_dir)
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
+    transcriber.set_auto_parallel(auto_parallel)
 
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)

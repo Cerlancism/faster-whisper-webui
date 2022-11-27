@@ -176,6 +176,10 @@ class ParallelTranscription(AbstractTranscription):
         while (chunk_start < total_duration):
             chunk_end = min(chunk_start + chunk_size, total_duration)
 
+            if (chunk_end - chunk_start < 1):
+                # No need to process chunks that are less than 1 second
+                break
+
             print("Parallel VAD: Executing chunk from " + str(chunk_start) + " to " + 
                     str(chunk_end) + " on CPU device " + str(cpu_device_id))
             parameters.append([audio, config, chunk_start, chunk_end]);

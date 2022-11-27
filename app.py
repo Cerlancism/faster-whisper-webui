@@ -6,6 +6,8 @@ from io import StringIO
 import os
 import pathlib
 import tempfile
+
+import torch
 from src.modelCache import ModelCache
 from src.vadParallel import ParallelContext, ParallelTranscription
 
@@ -28,6 +30,9 @@ DELETE_UPLOADED_FILES = True
 
 # Gradio seems to truncate files without keeping the extension, so we need to truncate the file prefix ourself 
 MAX_FILE_PREFIX_LENGTH = 17
+
+# Limit auto_parallel to a certain number of CPUs (specify vad_cpu_cores to get a higher number)
+MAX_AUTO_CPU_CORES = 8
 
 LANGUAGES = [ 
  "English", "Chinese", "German", "Spanish", "Russian", "Korean", 
@@ -64,6 +69,14 @@ class WhisperTranscriber:
 
     def set_parallel_devices(self, vad_parallel_devices: str):
         self.parallel_device_list = [ device.strip() for device in vad_parallel_devices.split(",") ] if vad_parallel_devices else None
+
+    def set_auto_parallel(self, auto_parallel: bool):
+        if auto_parallel:
+            if torch.cuda.is_available():
+                self.parallel_device_list = [ str(gpu_id) for gpu_id in range(torch.cuda.device_count())]
+
+            self.vad_cpu_cores = min(os.cpu_count(), MAX_AUTO_CPU_CORES)
+            print("[Auto parallel] Using GPU devices " + str(self.parallel_device_list) + " and " + str(self.vad_cpu_cores) + " CPU cores for VAD/transcription.")
 
     def transcribe_webui(self, modelName, languageName, urlData, uploadFile, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow):
         try:
@@ -268,11 +281,12 @@ class WhisperTranscriber:
 
 
 def create_ui(input_audio_max_duration, share=False, server_name: str = None, server_port: int = 7860, 
-              default_model_name: str = "medium", default_vad: str = None, vad_parallel_devices: str = None, vad_process_timeout: float = None, vad_cpu_cores: int = 1):
+              default_model_name: str = "medium", default_vad: str = None, vad_parallel_devices: str = None, vad_process_timeout: float = None, vad_cpu_cores: int = 1, auto_parallel: bool = False):
     ui = WhisperTranscriber(input_audio_max_duration, vad_process_timeout, vad_cpu_cores)
 
     # Specify a list of devices to use for parallel processing
     ui.set_parallel_devices(vad_parallel_devices)
+    ui.set_auto_parallel(auto_parallel)
 
     ui_description = "Whisper is a general-purpose speech recognition model. It is trained on a large dataset of diverse " 
     ui_description += " audio and is also a multi-task model that can perform multilingual speech recognition "
@@ -319,6 +333,7 @@ if __name__ == '__main__':
     parser.add_argument("--vad_parallel_devices", type=str, default="", help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.")
     parser.add_argument("--vad_cpu_cores", type=int, default=1, help="The number of CPU cores to use for VAD pre-processing.")
     parser.add_argument("--vad_process_timeout", type=float, default="1800", help="The number of seconds before inactivate processes are terminated. Use 0 to close processes immediately, or None for no timeout.")
+    parser.add_argument("--auto_parallel", type=bool, default=False, help="True to use all available GPUs and CPU cores for processing. Use vad_cpu_cores/vad_parallel_devices to specify the number of CPU cores/GPUs to use.")
 
     args = parser.parse_args().__dict__
     create_ui(**args)
