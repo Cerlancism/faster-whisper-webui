@@ -148,7 +148,7 @@ class WhisperTranscriber:
                 result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config)
             else:
                 # Default VAD
-                result = whisperCallable(audio_path, 0, None, None)
+                result = whisperCallable.invoke(audio_path, 0, None, None)
 
         return result
 
