@@ -272,6 +272,7 @@ class WhisperTranscriber:
         return file.name
 
     def close(self):
+        print("Closing parallel contexts")
         self.clear_cache()
 
         if (self.gpu_parallel_context is not None):
