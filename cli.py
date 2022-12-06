@@ -5,15 +5,12 @@ from urllib.parse import urlparse
 import warnings
 import numpy as np
 
-import whisper
-
 import torch
 from app import LANGUAGES, WhisperTranscriber
 from src.download import download_url
 
 from src.utils import optional_float, optional_int, str2bool
 from src.whisperContainer import WhisperContainer
-
 
 def cli():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
