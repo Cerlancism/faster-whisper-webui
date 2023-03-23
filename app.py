@@ -11,6 +11,7 @@ import zipfile
 import numpy as np
 
 import torch
+from src.config import ApplicationConfig
 from src.modelCache import ModelCache
 from src.source import get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
@@ -62,7 +63,8 @@ WHISPER_MODELS = ["tiny", "base", "small", "medium", "large", "large-v1", "large
 
 class WhisperTranscriber:
     def __init__(self, input_audio_max_duration: float = DEFAULT_INPUT_AUDIO_MAX_DURATION, vad_process_timeout: float = None, 
-                 vad_cpu_cores: int = 1, delete_uploaded_files: bool = DELETE_UPLOADED_FILES, output_dir: str = None):
+                 vad_cpu_cores: int = 1, delete_uploaded_files: bool = DELETE_UPLOADED_FILES, output_dir: str = None, 
+                 app_config: ApplicationConfig = None):
         self.model_cache = ModelCache()
         self.parallel_device_list = None
         self.gpu_parallel_context = None
@@ -74,6 +76,8 @@ class WhisperTranscriber:
         self.inputAudioMaxDuration = input_audio_max_duration
         self.deleteUploadedFiles = delete_uploaded_files
         self.output_dir = output_dir
+
+        self.app_config = app_config
 
     def set_parallel_devices(self, vad_parallel_devices: str):
         self.parallel_device_list = [ device.strip() for device in vad_parallel_devices.split(",") ] if vad_parallel_devices else None
@@ -115,7 +119,7 @@ class WhisperTranscriber:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                model = WhisperContainer(model_name=selectedModel, cache=self.model_cache)
+                model = WhisperContainer(model_name=selectedModel, cache=self.model_cache, models=self.app_config.models)
 
                 # Result
                 download = []
@@ -360,8 +364,8 @@ class WhisperTranscriber:
 def create_ui(input_audio_max_duration, share=False, server_name: str = None, server_port: int = 7860, 
               default_model_name: str = "medium", default_vad: str = None, vad_parallel_devices: str = None, 
               vad_process_timeout: float = None, vad_cpu_cores: int = 1, auto_parallel: bool = False, 
-              output_dir: str = None):
-    ui = WhisperTranscriber(input_audio_max_duration, vad_process_timeout, vad_cpu_cores, DELETE_UPLOADED_FILES, output_dir)
+              output_dir: str = None, app_config: ApplicationConfig = None):
+    ui = WhisperTranscriber(input_audio_max_duration, vad_process_timeout, vad_cpu_cores, DELETE_UPLOADED_FILES, output_dir, app_config)
 
     # Specify a list of devices to use for parallel processing
     ui.set_parallel_devices(vad_parallel_devices)
@@ -378,8 +382,10 @@ def create_ui(input_audio_max_duration, share=False, server_name: str = None, se
 
     ui_article = "Read the [documentation here](https://gitlab.com/aadnk/whisper-webui/-/blob/main/docs/options.md)"
 
+    whisper_models = app_config.get_model_names()
+
     simple_inputs = lambda : [
-        gr.Dropdown(choices=WHISPER_MODELS, value=default_model_name, label="Model"),
+        gr.Dropdown(choices=whisper_models, value=default_model_name, label="Model"),
         gr.Dropdown(choices=sorted(LANGUAGES), label="Language"),
         gr.Text(label="URL (YouTube, etc.)"),
         gr.File(label="Upload Files", file_count="multiple"),
@@ -429,18 +435,32 @@ def create_ui(input_audio_max_duration, share=False, server_name: str = None, se
     ui.close()
 
 if __name__ == '__main__':
+    app_config = ApplicationConfig.parse_file(os.environ.get("WHISPER_WEBUI_CONFIG", "config.json5"))
+    whisper_models = app_config.get_model_names()
+
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input_audio_max_duration", type=int, default=DEFAULT_INPUT_AUDIO_MAX_DURATION, help="Maximum audio file length in seconds, or -1 for no limit.")
-    parser.add_argument("--share", type=bool, default=False, help="True to share the app on HuggingFace.")
-    parser.add_argument("--server_name", type=str, default=None, help="The host or IP to bind to. If None, bind to localhost.")
-    parser.add_argument("--server_port", type=int, default=7860, help="The port to bind to.")
-    parser.add_argument("--default_model_name", type=str, choices=WHISPER_MODELS, default="medium", help="The default model name.")
-    parser.add_argument("--default_vad", type=str, default="silero-vad", help="The default VAD.")
-    parser.add_argument("--vad_parallel_devices", type=str, default="", help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.")
-    parser.add_argument("--vad_cpu_cores", type=int, default=1, help="The number of CPU cores to use for VAD pre-processing.")
-    parser.add_argument("--vad_process_timeout", type=float, default="1800", help="The number of seconds before inactivate processes are terminated. Use 0 to close processes immediately, or None for no timeout.")
-    parser.add_argument("--auto_parallel", type=bool, default=False, help="True to use all available GPUs and CPU cores for processing. Use vad_cpu_cores/vad_parallel_devices to specify the number of CPU cores/GPUs to use.")
-    parser.add_argument("--output_dir", "-o", type=str, default=None, help="directory to save the outputs")
+    parser.add_argument("--input_audio_max_duration", type=int, default=app_config.input_audio_max_duration, \
+                        help="Maximum audio file length in seconds, or -1 for no limit.") # 600
+    parser.add_argument("--share", type=bool, default=app_config.share, \
+                        help="True to share the app on HuggingFace.") # False
+    parser.add_argument("--server_name", type=str, default=app_config.server_name, \
+                        help="The host or IP to bind to. If None, bind to localhost.") # None
+    parser.add_argument("--server_port", type=int, default=app_config.server_port, \
+                        help="The port to bind to.") # 7860
+    parser.add_argument("--default_model_name", type=str, choices=whisper_models, default=app_config.default_model_name, \
+                        help="The default model name.") # medium
+    parser.add_argument("--default_vad", type=str, default=app_config.default_vad, \
+                        help="The default VAD.") # silero-vad
+    parser.add_argument("--vad_parallel_devices", type=str, default=app_config.vad_parallel_devices, \
+                        help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.") # ""
+    parser.add_argument("--vad_cpu_cores", type=int, default=app_config.vad_cpu_cores, \
+                        help="The number of CPU cores to use for VAD pre-processing.") # 1
+    parser.add_argument("--vad_process_timeout", type=float, default=app_config.vad_process_timeout, \
+                        help="The number of seconds before inactivate processes are terminated. Use 0 to close processes immediately, or None for no timeout.") # 1800
+    parser.add_argument("--auto_parallel", type=bool, default=app_config.auto_parallel, \
+                        help="True to use all available GPUs and CPU cores for processing. Use vad_cpu_cores/vad_parallel_devices to specify the number of CPU cores/GPUs to use.") # False
+    parser.add_argument("--output_dir", "-o", type=str, default=app_config.output_dir, \
+                        help="directory to save the outputs") # None
 
     args = parser.parse_args().__dict__
-    create_ui(**args)
+    create_ui(app_config=app_config, **args)
