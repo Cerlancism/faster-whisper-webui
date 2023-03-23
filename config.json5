@@ -33,6 +33,14 @@
         //    // The type of the model. Can be "huggingface" or "whisper" - "whisper" is the default.
         //    // HuggingFace models are loaded using the HuggingFace transformers library and then converted to Whisper models.
         //    "type": "huggingface",
+        //},
+        //{
+        //    "name": "local-model",
+        //    "url": "path/to/local/model",
+        //},
+        //{
+        //    "name": "remote-model",
+        //    "url": "https://example.com/path/to/model",
         //}
     ],
     // Configuration options that will be used if they are not specified in the command line arguments.
