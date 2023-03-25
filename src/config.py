@@ -103,7 +103,8 @@ class ModelConfig:
 
 class ApplicationConfig:
     def __init__(self, models: List[ModelConfig] = [], input_audio_max_duration: int = 600, 
-                 share: bool = False, server_name: str = None, server_port: int = 7860, delete_uploaded_files: bool = True,
+                 share: bool = False, server_name: str = None, server_port: int = 7860, 
+                 queue_concurrency_count: int = 1, delete_uploaded_files: bool = True,
                  default_model_name: str = "medium", default_vad: str = "silero-vad", 
                  vad_parallel_devices: str = "", vad_cpu_cores: int = 1, vad_process_timeout: int = 1800, 
                  auto_parallel: bool = False, output_dir: str = None,
@@ -128,6 +129,7 @@ class ApplicationConfig:
         self.share = share
         self.server_name = server_name
         self.server_port = server_port
+        self.queue_concurrency_count = queue_concurrency_count
         self.delete_uploaded_files = delete_uploaded_files
 
         self.default_model_name = default_model_name

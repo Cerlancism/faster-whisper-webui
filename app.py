@@ -423,6 +423,10 @@ def create_ui(app_config: ApplicationConfig):
 
     demo = gr.TabbedInterface([simple_transcribe, full_transcribe], tab_names=["Simple", "Full"])
 
+    # Queue up the demo
+    if app_config.queue_concurrency_count is not None and app_config.queue_concurrency_count > 0:
+        demo.queue(concurrency_count=app_config.queue_concurrency_count)
+   
     demo.launch(share=app_config.share, server_name=app_config.server_name, server_port=app_config.server_port)
     
     # Clean up
@@ -441,6 +445,8 @@ if __name__ == '__main__':
                         help="The host or IP to bind to. If None, bind to localhost.") # None
     parser.add_argument("--server_port", type=int, default=app_config.server_port, \
                         help="The port to bind to.") # 7860
+    parser.add_argument("--queue_concurrency_count", type=int, default=app_config.queue_concurrency_count, \
+                        help="The number of concurrent requests to process.") # 1
     parser.add_argument("--default_model_name", type=str, choices=whisper_models, default=app_config.default_model_name, \
                         help="The default model name.") # medium
     parser.add_argument("--default_vad", type=str, default=app_config.default_vad, \

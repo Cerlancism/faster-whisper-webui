@@ -55,6 +55,8 @@
     "server_name": null,
     // The port to bind to.
     "server_port": 7860,
+    // The number of workers to use for the web server. Use -1 to disable queueing.
+    "queue_concurrency_count": 1,
     // Whether or not to automatically delete all uploaded files, to save disk space
     "delete_uploaded_files": true,
 
