@@ -111,9 +111,21 @@ def unregister_thread_local_progress_listener(progress_listener: ProgressListene
 def create_progress_listener_handle(progress_listener: ProgressListener):
     return ProgressListenerHandle(progress_listener)
 
+# Example usage
 if __name__ == '__main__':
-    with create_progress_listener_handle(ProgressListener()) as listener:
-        # Call model.transcribe here
-        pass
+    class PrintingProgressListener:
+        def on_progress(self, current: Union[int, float], total: Union[int, float]):
+            print(f"Progress: {current}/{total}")
+
+        def on_finished(self):
+            print("Finished")
+
+    import whisper
+    model = whisper.load_model("medium")
+
+    with create_progress_listener_handle(PrintingProgressListener()) as listener:
+        # Set verbose to None to disable the progress bar, as we are using our own
+        result = model.transcribe("J:\\Dev\\OpenAI\\whisper\\tests\\Noriko\\out.mka", language="Japanese", fp16=False, verbose=None)
+        print(result)
 
     print("Done")
