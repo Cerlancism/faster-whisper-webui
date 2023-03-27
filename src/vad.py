@@ -5,6 +5,7 @@ import time
 from typing import Any, Deque, Iterator, List, Dict
 
 from pprint import pprint
+from src.hooks.whisperProgressHook import ProgressListener, SubTaskProgressListener, create_progress_listener_handle
 from src.modelCache import GLOBAL_MODEL_CACHE, ModelCache
 
 from src.segments import merge_timestamps
@@ -135,7 +136,8 @@ class AbstractTranscription(ABC):
             pprint(merged)
         return merged
 
-    def transcribe(self, audio: str, whisperCallable: WhisperCallback, config: TranscriptionConfig):
+    def transcribe(self, audio: str, whisperCallable: WhisperCallback, config: TranscriptionConfig, 
+                   progressListener: ProgressListener = None):
         """
         Transcribe the given audo file.
 
@@ -184,7 +186,7 @@ class AbstractTranscription(ABC):
             segment_duration = segment_end - segment_start
 
             if segment_duration < MIN_SEGMENT_DURATION:
-                continue;
+                continue
 
             # Audio to run on Whisper
             segment_audio = self.get_audio_segment(audio, start_time = str(segment_start), duration = str(segment_duration))
@@ -196,7 +198,9 @@ class AbstractTranscription(ABC):
 
             print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", 
                   segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt, "language: ", detected_language)
-            segment_result = whisperCallable.invoke(segment_audio, segment_index, segment_prompt, detected_language)
+            
+            scaled_progress_listener = SubTaskProgressListener(progressListener, base_task_total=max_audio_duration, sub_task_start=segment_start, sub_task_total=segment_duration) 
+            segment_result = whisperCallable.invoke(segment_audio, segment_index, segment_prompt, detected_language, progress_listener=scaled_progress_listener)
 
             adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
@@ -226,7 +230,7 @@ class AbstractTranscription(ABC):
             result['language'] = detected_language
 
         return result
-            
+    
     def __update_prompt_window(self, prompt_window: Deque, adjusted_segments: List, segment_end: float, segment_gap: bool, config: TranscriptionConfig):
         if (config.max_prompt_window is not None and config.max_prompt_window > 0):
             # Add segments to the current prompt window (unless it is a speech gap)

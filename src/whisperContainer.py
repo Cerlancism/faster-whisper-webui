@@ -1,8 +1,13 @@
 # External programs
 import os
+import sys
 from typing import List
+
 import whisper
+from whisper import Whisper
+
 from src.config import ModelConfig
+from src.hooks.whisperProgressHook import ProgressListener, create_progress_listener_handle
 
 from src.modelCache import GLOBAL_MODEL_CACHE, ModelCache
 
@@ -116,7 +121,7 @@ class WhisperCallback:
         self.initial_prompt = initial_prompt
         self.decodeOptions = decodeOptions
         
-    def invoke(self, audio, segment_index: int, prompt: str, detected_language: str):
+    def invoke(self, audio, segment_index: int, prompt: str, detected_language: str, progress_listener: ProgressListener = None):
         """
         Peform the transcription of the given audio file or data.
 
@@ -139,10 +144,18 @@ class WhisperCallback:
         """
         model = self.model_container.get_model()
 
+        if progress_listener is not None:
+            with create_progress_listener_handle(progress_listener):
+                return self._transcribe(model, audio, segment_index, prompt, detected_language)
+        else:
+            return self._transcribe(model, audio, segment_index, prompt, detected_language)
+    
+    def _transcribe(self, model: Whisper, audio, segment_index: int, prompt: str, detected_language: str):
         return model.transcribe(audio, \
-                 language=self.language if self.language else detected_language, task=self.task, \
-                 initial_prompt=self._concat_prompt(self.initial_prompt, prompt) if segment_index == 0 else prompt, \
-                 **self.decodeOptions)
+            language=self.language if self.language else detected_language, task=self.task, \
+            initial_prompt=self._concat_prompt(self.initial_prompt, prompt) if segment_index == 0 else prompt, \
+            **self.decodeOptions
+        )
 
     def _concat_prompt(self, prompt1, prompt2):
         if (prompt1 is None):

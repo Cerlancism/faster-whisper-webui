@@ -1,6 +1,6 @@
 from datetime import datetime
 import math
-from typing import Iterator
+from typing import Iterator, Union
 import argparse
 
 from io import StringIO
@@ -12,6 +12,7 @@ import numpy as np
 
 import torch
 from src.config import ApplicationConfig
+from src.hooks.whisperProgressHook import ProgressListener, create_progress_listener_handle
 from src.modelCache import ModelCache
 from src.source import get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
@@ -87,14 +88,17 @@ class WhisperTranscriber:
             print("[Auto parallel] Using GPU devices " + str(self.parallel_device_list) + " and " + str(self.vad_cpu_cores) + " CPU cores for VAD/transcription.")
 
     # Entry function for the simple tab
-    def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow):
-        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+    def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
+                                progress=gr.Progress()):
+        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
+                                     progress=progress)
 
     # Entry function for the full tab
     def transcribe_webui_full(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
                                     initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
                                     condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
-                                    compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float):
+                                    compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float, 
+                                    progress=gr.Progress()):
 
         # Handle temperature_increment_on_fallback
         if temperature_increment_on_fallback is not None:
@@ -105,9 +109,11 @@ class WhisperTranscriber:
         return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
                                      initial_prompt=initial_prompt, temperature=temperature, best_of=best_of, beam_size=beam_size, patience=patience, length_penalty=length_penalty, suppress_tokens=suppress_tokens,
                                      condition_on_previous_text=condition_on_previous_text, fp16=fp16,
-                                     compression_ratio_threshold=compression_ratio_threshold, logprob_threshold=logprob_threshold, no_speech_threshold=no_speech_threshold)
+                                     compression_ratio_threshold=compression_ratio_threshold, logprob_threshold=logprob_threshold, no_speech_threshold=no_speech_threshold, 
+                                     progress=progress)
 
-    def transcribe_webui(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, **decodeOptions: dict):
+    def transcribe_webui(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
+                         progress: gr.Progress = None, **decodeOptions: dict):
         try:
             sources = self.__get_source(urlData, multipleFiles, microphoneData)
             
@@ -140,7 +146,7 @@ class WhisperTranscriber:
                         print("Transcribing ", source.source_path)
 
                     # Transcribe
-                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, **decodeOptions)
+                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, progress, **decodeOptions)
                     filePrefix = slugify(source_prefix + source.get_short_name(), allow_unicode=True)
 
                     source_download, source_text, source_vtt = self.write_result(result, filePrefix, outputDirectory)
@@ -202,7 +208,8 @@ class WhisperTranscriber:
             return [], ("[ERROR]: Maximum remote video length is " + str(e.maxDuration) + "s, file was " + str(e.videoDuration) + "s"), "[ERROR]"
 
     def transcribe_file(self, model: WhisperContainer, audio_path: str, language: str, task: str = None, vad: str = None, 
-                        vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, **decodeOptions: dict):
+                        vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, 
+                        progress: gr.Progress = None, **decodeOptions: dict):
         
         initial_prompt = decodeOptions.pop('initial_prompt', None)
 
@@ -212,25 +219,28 @@ class WhisperTranscriber:
         # Callable for processing an audio file
         whisperCallable = model.create_callback(language, task, initial_prompt, **decodeOptions)
 
+        # A listener that will report progress to Gradio
+        progressListener = self._create_progress_listener(progress)
+
         # The results
         if (vad == 'silero-vad'):
             # Silero VAD where non-speech gaps are transcribed
             process_gaps = self._create_silero_config(NonSpeechStrategy.CREATE_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = self.process_vad(audio_path, whisperCallable, self.vad_model, process_gaps)
+            result = self.process_vad(audio_path, whisperCallable, self.vad_model, process_gaps, progressListener=progressListener)
         elif (vad == 'silero-vad-skip-gaps'):
             # Silero VAD where non-speech gaps are simply ignored
             skip_gaps = self._create_silero_config(NonSpeechStrategy.SKIP, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = self.process_vad(audio_path, whisperCallable, self.vad_model, skip_gaps)
+            result = self.process_vad(audio_path, whisperCallable, self.vad_model, skip_gaps, progressListener=progressListener)
         elif (vad == 'silero-vad-expand-into-gaps'):
             # Use Silero VAD where speech-segments are expanded into non-speech gaps
             expand_gaps = self._create_silero_config(NonSpeechStrategy.EXPAND_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
-            result = self.process_vad(audio_path, whisperCallable, self.vad_model, expand_gaps)
+            result = self.process_vad(audio_path, whisperCallable, self.vad_model, expand_gaps, progressListener=progressListener)
         elif (vad == 'periodic-vad'):
             # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
             # it may create a break in the middle of a sentence, causing some artifacts.
             periodic_vad = VadPeriodicTranscription()
             period_config = PeriodicTranscriptionConfig(periodic_duration=vadMaxMergeSize, max_prompt_window=vadPromptWindow)
-            result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config)
+            result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config, progressListener=progressListener)
 
         else:
             if (self._has_parallel_devices()):
@@ -238,18 +248,38 @@ class WhisperTranscriber:
                 periodic_vad = VadPeriodicTranscription()
                 period_config = PeriodicTranscriptionConfig(periodic_duration=math.inf, max_prompt_window=1)
 
-                result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config)
+                result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config, progressListener=progressListener)
             else:
                 # Default VAD
-                result = whisperCallable.invoke(audio_path, 0, None, None)
+                result = whisperCallable.invoke(audio_path, 0, None, None, progress_listener=progressListener)
 
         return result
 
-    def process_vad(self, audio_path, whisperCallable, vadModel: AbstractTranscription, vadConfig: TranscriptionConfig):
+    def _create_progress_listener(self, progress: gr.Progress):
+        if (progress is None):
+            # Dummy progress listener
+            return ProgressListener()
+        
+        class ForwardingProgressListener(ProgressListener):
+            def __init__(self, progress: gr.Progress):
+                self.progress = progress
+
+            def on_progress(self, current: Union[int, float], total: Union[int, float]):
+                # From 0 to 1
+                self.progress(current / total)
+
+            def on_finished(self):
+                self.progress(1)
+
+        return ForwardingProgressListener(progress)
+
+    def process_vad(self, audio_path, whisperCallable, vadModel: AbstractTranscription, vadConfig: TranscriptionConfig, 
+                    progressListener: ProgressListener = None):
         if (not self._has_parallel_devices()):
             # No parallel devices, so just run the VAD and Whisper in sequence
-            return vadModel.transcribe(audio_path, whisperCallable, vadConfig)
+            return vadModel.transcribe(audio_path, whisperCallable, vadConfig, progressListener=progressListener)
 
+        # TODO: Handle progress listener
         gpu_devices = self.parallel_device_list
 
         if (gpu_devices is None or len(gpu_devices) == 0):
