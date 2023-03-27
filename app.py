@@ -279,7 +279,6 @@ class WhisperTranscriber:
             # No parallel devices, so just run the VAD and Whisper in sequence
             return vadModel.transcribe(audio_path, whisperCallable, vadConfig, progressListener=progressListener)
 
-        # TODO: Handle progress listener
         gpu_devices = self.parallel_device_list
 
         if (gpu_devices is None or len(gpu_devices) == 0):
@@ -297,7 +296,8 @@ class WhisperTranscriber:
         parallel_vad = ParallelTranscription()
         return parallel_vad.transcribe_parallel(transcription=vadModel, audio=audio_path, whisperCallable=whisperCallable,  
                                                 config=vadConfig, cpu_device_count=self.vad_cpu_cores, gpu_devices=gpu_devices, 
-                                                cpu_parallel_context=self.cpu_parallel_context, gpu_parallel_context=self.gpu_parallel_context) 
+                                                cpu_parallel_context=self.cpu_parallel_context, gpu_parallel_context=self.gpu_parallel_context, 
+                                                progress_listener=progressListener) 
 
     def _has_parallel_devices(self):
         return (self.parallel_device_list is not None and len(self.parallel_device_list) > 0) or self.vad_cpu_cores > 1

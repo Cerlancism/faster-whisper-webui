@@ -1,14 +1,33 @@
 import multiprocessing
+from queue import Empty
 import threading
 import time
+from src.hooks.whisperProgressHook import ProgressListener
 from src.vad import AbstractTranscription, TranscriptionConfig, get_audio_duration
 from src.whisperContainer import WhisperCallback
 
-from multiprocessing import Pool
+from multiprocessing import Pool, Queue
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 import os
 
+class _ProgressListenerToQueue(ProgressListener):
+    def __init__(self, progress_queue: Queue):
+        self.progress_queue = progress_queue
+        self.progress_total = 0
+        self.prev_progress = 0
+
+    def on_progress(self, current: Union[int, float], total: Union[int, float]):
+        delta = current - self.prev_progress
+        self.prev_progress = current
+        self.progress_total = total
+        self.progress_queue.put(delta)
+
+    def on_finished(self):
+        if self.progress_total > self.prev_progress:
+            delta = self.progress_total - self.prev_progress
+            self.progress_queue.put(delta)
+            self.prev_progress = self.progress_total
 
 class ParallelContext:
     def __init__(self, num_processes: int = None, auto_cleanup_timeout_seconds: float = None):
@@ -86,7 +105,8 @@ class ParallelTranscription(AbstractTranscription):
         super().__init__(sampling_rate=sampling_rate)
 
     def transcribe_parallel(self, transcription: AbstractTranscription, audio: str, whisperCallable: WhisperCallback, config: TranscriptionConfig, 
-                            cpu_device_count: int, gpu_devices: List[str], cpu_parallel_context: ParallelContext = None, gpu_parallel_context: ParallelContext = None):
+                            cpu_device_count: int, gpu_devices: List[str], cpu_parallel_context: ParallelContext = None, gpu_parallel_context: ParallelContext = None, 
+                            progress_listener: ProgressListener = None):
         total_duration = get_audio_duration(audio)
 
         # First, get the timestamps for the original audio
@@ -108,6 +128,9 @@ class ParallelTranscription(AbstractTranscription):
         parameters = []
         segment_index = config.initial_segment_index
 
+        processing_manager = multiprocessing.Manager()
+        progress_queue = processing_manager.Queue()
+
         for i in range(len(gpu_devices)):
             # Note that device_segment_list can be empty. But we will still create a process for it,
             # as otherwise we run the risk of assigning the same device to multiple processes.
@@ -120,7 +143,8 @@ class ParallelTranscription(AbstractTranscription):
             device_config = ParallelTranscriptionConfig(device_id, device_segment_list, segment_index, config)
             segment_index += len(device_segment_list)
 
-            parameters.append([audio, whisperCallable, device_config]);
+            progress_listener_to_queue = _ProgressListenerToQueue(progress_queue)
+            parameters.append([audio, whisperCallable, device_config, progress_listener_to_queue]);
 
         merged = {
             'text': '',
@@ -142,7 +166,24 @@ class ParallelTranscription(AbstractTranscription):
             pool = gpu_parallel_context.get_pool()
 
             # Run the transcription in parallel
-            results = pool.starmap(self.transcribe, parameters)
+            results_async = pool.starmap_async(self.transcribe, parameters)
+            total_progress = 0
+
+            while not results_async.ready():
+                try:
+                    delta = progress_queue.get(timeout=5)  # Set a timeout of 5 seconds
+                except Empty:
+                    continue
+                
+                total_progress += delta
+                if progress_listener is not None:
+                    progress_listener.on_progress(total_progress, total_duration)
+
+            results = results_async.get()
+
+            # Call the finished callback
+            if progress_listener is not None:
+                progress_listener.on_finished()
 
             for result in results:
                 # Merge the results
@@ -231,11 +272,12 @@ class ParallelTranscription(AbstractTranscription):
     def get_merged_timestamps(self,  timestamps: List[Dict[str, Any]], config: ParallelTranscriptionConfig, total_duration: float):
         # Override timestamps that will be processed
         if (config.override_timestamps is not None):
-            print("Using override timestamps of size " + str(len(config.override_timestamps)))
+            print("(get_merged_timestamps) Using override timestamps of size " + str(len(config.override_timestamps)))
             return config.override_timestamps
         return super().get_merged_timestamps(timestamps, config, total_duration)
 
-    def transcribe(self, audio: str, whisperCallable: WhisperCallback, config: ParallelTranscriptionConfig):
+    def transcribe(self, audio: str, whisperCallable: WhisperCallback, config: ParallelTranscriptionConfig, 
+                   progressListener: ProgressListener = None):
         # Override device ID the first time
         if (os.environ.get("INITIALIZED", None) is None):
             os.environ["INITIALIZED"] = "1"
@@ -246,7 +288,7 @@ class ParallelTranscription(AbstractTranscription):
                 print("Using device " + config.device_id)
                 os.environ["CUDA_VISIBLE_DEVICES"] = config.device_id
         
-        return super().transcribe(audio, whisperCallable, config)
+        return super().transcribe(audio, whisperCallable, config, progressListener)
 
     def _split(self, a, n):
         """Split a list into n approximately equal parts."""

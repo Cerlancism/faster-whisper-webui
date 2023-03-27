@@ -153,84 +153,96 @@ class AbstractTranscription(ABC):
         A list of start and end timestamps, in fractional seconds.
         """
 
-        max_audio_duration = get_audio_duration(audio)
-        timestamp_segments = self.get_transcribe_timestamps(audio, config, 0, max_audio_duration)
+        try:
+            max_audio_duration = self.get_audio_duration(audio, config)
+            timestamp_segments = self.get_transcribe_timestamps(audio, config, 0, max_audio_duration)
 
-        # Get speech timestamps from full audio file
-        merged = self.get_merged_timestamps(timestamp_segments, config, max_audio_duration)
+            # Get speech timestamps from full audio file
+            merged = self.get_merged_timestamps(timestamp_segments, config, max_audio_duration)
 
-        # A deque of transcribed segments that is passed to the next segment as a prompt
-        prompt_window = deque()
+            # A deque of transcribed segments that is passed to the next segment as a prompt
+            prompt_window = deque()
 
-        print("Processing timestamps:")
-        pprint(merged)
+            print("Processing timestamps:")
+            pprint(merged)
 
-        result = {
-            'text': "",
-            'segments': [],
-            'language': ""
-        }
-        languageCounter = Counter()
-        detected_language = None
+            result = {
+                'text': "",
+                'segments': [],
+                'language': ""
+            }
+            languageCounter = Counter()
+            detected_language = None
 
-        segment_index = config.initial_segment_index
+            segment_index = config.initial_segment_index
 
-        # For each time segment, run whisper
-        for segment in merged:
-            segment_index += 1
-            segment_start = segment['start']
-            segment_end = segment['end']
-            segment_expand_amount = segment.get('expand_amount', 0)
-            segment_gap = segment.get('gap', False)
+            # Calculate progress 
+            progress_start_offset = merged[0]['start'] if len(merged) > 0 else 0
+            progress_total_duration = sum([segment['end'] - segment['start'] for segment in merged])
 
-            segment_duration = segment_end - segment_start
+            # For each time segment, run whisper
+            for segment in merged:
+                segment_index += 1
+                segment_start = segment['start']
+                segment_end = segment['end']
+                segment_expand_amount = segment.get('expand_amount', 0)
+                segment_gap = segment.get('gap', False)
 
-            if segment_duration < MIN_SEGMENT_DURATION:
-                continue
+                segment_duration = segment_end - segment_start
 
-            # Audio to run on Whisper
-            segment_audio = self.get_audio_segment(audio, start_time = str(segment_start), duration = str(segment_duration))
-            # Previous segments to use as a prompt
-            segment_prompt = ' '.join([segment['text'] for segment in prompt_window]) if len(prompt_window) > 0 else None
-    
-            # Detected language
-            detected_language = languageCounter.most_common(1)[0][0] if len(languageCounter) > 0 else None
+                if segment_duration < MIN_SEGMENT_DURATION:
+                    continue
 
-            print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", 
-                  segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt, "language: ", detected_language)
-            
-            scaled_progress_listener = SubTaskProgressListener(progressListener, base_task_total=max_audio_duration, sub_task_start=segment_start, sub_task_total=segment_duration) 
-            segment_result = whisperCallable.invoke(segment_audio, segment_index, segment_prompt, detected_language, progress_listener=scaled_progress_listener)
+                # Audio to run on Whisper
+                segment_audio = self.get_audio_segment(audio, start_time = str(segment_start), duration = str(segment_duration))
+                # Previous segments to use as a prompt
+                segment_prompt = ' '.join([segment['text'] for segment in prompt_window]) if len(prompt_window) > 0 else None
+        
+                # Detected language
+                detected_language = languageCounter.most_common(1)[0][0] if len(languageCounter) > 0 else None
 
-            adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
+                print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", 
+                    segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt, "language: ", detected_language)
+                
+                scaled_progress_listener = SubTaskProgressListener(progressListener, base_task_total=progress_total_duration, 
+                                                                   sub_task_start=segment_start - progress_start_offset, sub_task_total=segment_duration) 
+                segment_result = whisperCallable.invoke(segment_audio, segment_index, segment_prompt, detected_language, progress_listener=scaled_progress_listener)
 
-            # Propagate expand amount to the segments
-            if (segment_expand_amount > 0):
-                segment_without_expansion = segment_duration - segment_expand_amount
+                adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
-                for adjusted_segment in adjusted_segments:
-                    adjusted_segment_end = adjusted_segment['end']
+                # Propagate expand amount to the segments
+                if (segment_expand_amount > 0):
+                    segment_without_expansion = segment_duration - segment_expand_amount
 
-                    # Add expand amount if the segment got expanded
-                    if (adjusted_segment_end > segment_without_expansion):
-                        adjusted_segment["expand_amount"] = adjusted_segment_end - segment_without_expansion
+                    for adjusted_segment in adjusted_segments:
+                        adjusted_segment_end = adjusted_segment['end']
 
-            # Append to output
-            result['text'] += segment_result['text']
-            result['segments'].extend(adjusted_segments)
+                        # Add expand amount if the segment got expanded
+                        if (adjusted_segment_end > segment_without_expansion):
+                            adjusted_segment["expand_amount"] = adjusted_segment_end - segment_without_expansion
 
-            # Increment detected language
-            if not segment_gap:
-                languageCounter[segment_result['language']] += 1
+                # Append to output
+                result['text'] += segment_result['text']
+                result['segments'].extend(adjusted_segments)
 
-            # Update prompt window
-            self.__update_prompt_window(prompt_window, adjusted_segments, segment_end, segment_gap, config)
-            
-        if detected_language is not None:
-            result['language'] = detected_language
+                # Increment detected language
+                if not segment_gap:
+                    languageCounter[segment_result['language']] += 1
 
+                # Update prompt window
+                self.__update_prompt_window(prompt_window, adjusted_segments, segment_end, segment_gap, config)
+                
+            if detected_language is not None:
+                result['language'] = detected_language
+        finally:
+            # Notify progress listener that we are done
+            if progressListener is not None:
+                progressListener.on_finished()
         return result
     
+    def get_audio_duration(self, audio: str, config: TranscriptionConfig):
+        return get_audio_duration(audio)
+
     def __update_prompt_window(self, prompt_window: Deque, adjusted_segments: List, segment_end: float, segment_gap: bool, config: TranscriptionConfig):
         if (config.max_prompt_window is not None and config.max_prompt_window > 0):
             # Add segments to the current prompt window (unless it is a speech gap)
