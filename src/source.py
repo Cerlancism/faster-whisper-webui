@@ -12,14 +12,21 @@ from src.download import ExceededMaximumDuration, download_url
 MAX_FILE_PREFIX_LENGTH = 17
 
 class AudioSource:
-    def __init__(self, source_path, source_name = None):
+    def __init__(self, source_path, source_name = None, audio_duration = None):
         self.source_path = source_path
         self.source_name = source_name
+        self._audio_duration = audio_duration
 
         # Load source name if not provided
         if (self.source_name is None):
             file_path = pathlib.Path(self.source_path)
             self.source_name = file_path.name
+
+    def get_audio_duration(self):
+        if self._audio_duration is None:
+            self._audio_duration = float(ffmpeg.probe(self.source_path)["format"]["duration"])
+
+        return self._audio_duration
 
     def get_full_name(self):
         return self.source_name
@@ -53,18 +60,21 @@ def get_audio_source_collection(urlData: str, multipleFiles: List, microphoneDat
         if (microphoneData is not None):
             output.append(AudioSource(microphoneData))
 
-        total_duration = 0
+    total_duration = 0
 
-        # Calculate total audio length. We do this even if input_audio_max_duration
-        # is disabled to ensure that all the audio files are valid.
-        for source in output:
-            audioDuration = ffmpeg.probe(source.source_path)["format"]["duration"]
-            total_duration += float(audioDuration)
+    # Calculate total audio length. We do this even if input_audio_max_duration
+    # is disabled to ensure that all the audio files are valid.
+    for source in output:
+        audioDuration = ffmpeg.probe(source.source_path)["format"]["duration"]
+        total_duration += float(audioDuration)
+        
+        # Save audio duration
+        source._audio_duration = float(audioDuration)
 
-        # Ensure the total duration of the audio is not too long
-        if input_audio_max_duration > 0:
-            if float(total_duration) > input_audio_max_duration:
-                raise ExceededMaximumDuration(videoDuration=total_duration, maxDuration=input_audio_max_duration, message="Video(s) is too long")
-                
+    # Ensure the total duration of the audio is not too long
+    if input_audio_max_duration > 0:
+        if float(total_duration) > input_audio_max_duration:
+            raise ExceededMaximumDuration(videoDuration=total_duration, maxDuration=input_audio_max_duration, message="Video(s) is too long")
+
     # Return a list of audio sources
     return output

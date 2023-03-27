@@ -12,7 +12,7 @@ import numpy as np
 
 import torch
 from src.config import ApplicationConfig
-from src.hooks.whisperProgressHook import ProgressListener, create_progress_listener_handle
+from src.hooks.whisperProgressHook import ProgressListener, SubTaskProgressListener, create_progress_listener_handle
 from src.modelCache import ModelCache
 from src.source import get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
@@ -135,9 +135,17 @@ class WhisperTranscriber:
 
                 outputDirectory = self.output_dir if self.output_dir is not None else downloadDirectory
 
+                # Progress
+                total_duration = sum([source.get_audio_duration() for source in sources])
+                current_progress = 0
+
+                # A listener that will report progress to Gradio
+                root_progress_listener = self._create_progress_listener(progress)
+
                 # Execute whisper
                 for source in sources:
                     source_prefix = ""
+                    source_audio_duration = source.get_audio_duration()
 
                     if (len(sources) > 1):
                         # Prefix (minimum 2 digits)
@@ -145,9 +153,17 @@ class WhisperTranscriber:
                         source_prefix = str(source_index).zfill(2) + "_"
                         print("Transcribing ", source.source_path)
 
+                    scaled_progress_listener = SubTaskProgressListener(root_progress_listener, 
+                                                   base_task_total=total_duration,
+                                                   sub_task_start=current_progress,
+                                                   sub_task_total=source_audio_duration)
+
                     # Transcribe
-                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, progress, **decodeOptions)
+                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, scaled_progress_listener, **decodeOptions)
                     filePrefix = slugify(source_prefix + source.get_short_name(), allow_unicode=True)
+
+                    # Update progress
+                    current_progress += source_audio_duration
 
                     source_download, source_text, source_vtt = self.write_result(result, filePrefix, outputDirectory)
 
@@ -209,18 +225,19 @@ class WhisperTranscriber:
 
     def transcribe_file(self, model: WhisperContainer, audio_path: str, language: str, task: str = None, vad: str = None, 
                         vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, 
-                        progress: gr.Progress = None, **decodeOptions: dict):
+                        progressListener: ProgressListener = None, **decodeOptions: dict):
         
         initial_prompt = decodeOptions.pop('initial_prompt', None)
+
+        if progressListener is None:
+            # Default progress listener
+            progressListener = ProgressListener()
 
         if ('task' in decodeOptions):
             task = decodeOptions.pop('task')
 
         # Callable for processing an audio file
         whisperCallable = model.create_callback(language, task, initial_prompt, **decodeOptions)
-
-        # A listener that will report progress to Gradio
-        progressListener = self._create_progress_listener(progress)
 
         # The results
         if (vad == 'silero-vad'):
