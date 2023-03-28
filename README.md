@@ -46,6 +46,35 @@ python cli.py --model large --vad silero-vad --language Japanese "https://www.yo
 Rather than supplying arguments to `app.py` or `cli.py`, you can also use the configuration file [config.json5](config.json5). See that file for more information. 
 If you want to use a different configuration file, you can use the `WHISPER_WEBUI_CONFIG` environment variable to specify the path to another file.
 
+### Multiple Files
+
+You can upload multiple files either through the "Upload files" option, or as a playlist on YouTube. 
+Each audio file will then be processed in turn, and the resulting SRT/VTT/Transcript will be made available in the "Download" section. 
+When more than one file is processed, the UI will also generate a "All_Output" zip file containing all the text output files.
+
+## Faster Whisper
+
+You can also use [Faster Whisper](https://github.com/guillaumekln/faster-whisper) as a drop-in replacement for the default Whisper which achieves up to a 4x speedup 
+and 2x reduction in memory usage.
+
+To use Faster Whisper, install the requirements in `requirements-fastWhisper.txt`:
+```
+pip install -r requirements-fastWhisper.txt
+```
+And then run the App or the CLI with the `--whisper_implementation fast-whisper` flag:
+```
+python app.py --whisper_implementation fast-whisper --input_audio_max_duration -1 --server_name 127.0.0.1 --auto_parallel True
+```
+You can also select the whisper implementation in `config.json5`:
+```json5
+{
+    "whisper_implementation": "fast-whisper"
+}
+```
+### GPU Acceleration
+
+In order to use GPU acceleration with Faster Whisper, both CUDA 11.2 and cuDNN 8 must be installed. You may want to install it in a virtual environment like Anaconda.
+
 ## Google Colab
 
 You can also run this Web UI directly on [Google Colab](https://colab.research.google.com/drive/1qeTSvi7Bt_5RMm88ipW4fkcsMOKlDDss?usp=sharing), if you haven't got a GPU powerful enough to run the larger models.
@@ -86,12 +115,6 @@ cores (up to 8):
 ```
 python app.py --input_audio_max_duration -1 --auto_parallel True
 ```
-
-### Multiple Files
-
-You can upload multiple files either through the "Upload files" option, or as a playlist on YouTube. 
-Each audio file will then be processed in turn, and the resulting SRT/VTT/Transcript will be made available in the "Download" section. 
-When more than one file is processed, the UI will also generate a "All_Output" zip file containing all the text output files.
 
 # Docker
 
