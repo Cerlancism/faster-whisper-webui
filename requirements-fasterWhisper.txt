@@ -6,3 +6,4 @@ yt-dlp
 json5
 torch
 torchaudio
+more_itertools

@@ -20,6 +20,9 @@ def cli():
     # For the CLI, we fallback to saving the output to the current directory
     output_dir = app_config.output_dir if app_config.output_dir is not None else "."
 
+    # Environment variable overrides
+    default_whisper_implementation = os.environ.get("WHISPER_IMPLEMENTATION", app_config.whisper_implementation)
+
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("audio", nargs="+", type=str, \
                         help="audio file(s) to transcribe")
@@ -32,9 +35,9 @@ def cli():
     parser.add_argument("--output_dir", "-o", type=str, default=output_dir, \
                         help="directory to save the outputs")
     parser.add_argument("--verbose", type=str2bool, default=app_config.verbose, \
-                        help="whether to print out the progress and debug messages"), \
-    parser.add_argument("--whisper_implementation", type=str, default=app_config.whisper_implementation, choices=["whisper", "faster-whisper"],\
-                        help="the Whisper implementation to use"), \
+                        help="whether to print out the progress and debug messages")
+    parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
+                        help="the Whisper implementation to use")
                         
     parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate"], \
                         help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
@@ -95,6 +98,7 @@ def cli():
     os.makedirs(output_dir, exist_ok=True)
 
     whisper_implementation = args.pop("whisper_implementation")
+    print(f"Using {whisper_implementation} for Whisper")
 
     if model_name.endswith(".en") and args["language"] not in {"en", "English"}:
         warnings.warn(f"{model_name} is an English-only model but receipted '{args['language']}'; using English instead.")

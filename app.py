@@ -125,7 +125,7 @@ class WhisperTranscriber:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                model = create_whisper_container(whisper_implementation=app_config.whisper_implementation, 
+                model = create_whisper_container(whisper_implementation=self.app_config.whisper_implementation, 
                                                  model_name=selectedModel, cache=self.model_cache, models=self.app_config.models)
 
                 # Result
@@ -485,38 +485,43 @@ def create_ui(app_config: ApplicationConfig):
     ui.close()
 
 if __name__ == '__main__':
-    app_config = ApplicationConfig.create_default()
-    whisper_models = app_config.get_model_names()
+    default_app_config = ApplicationConfig.create_default()
+    whisper_models = default_app_config.get_model_names()
+
+    # Environment variable overrides
+    default_whisper_implementation = os.environ.get("WHISPER_IMPLEMENTATION", default_app_config.whisper_implementation)
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--input_audio_max_duration", type=int, default=app_config.input_audio_max_duration, \
+    parser.add_argument("--input_audio_max_duration", type=int, default=default_app_config.input_audio_max_duration, \
                         help="Maximum audio file length in seconds, or -1 for no limit.") # 600
-    parser.add_argument("--share", type=bool, default=app_config.share, \
+    parser.add_argument("--share", type=bool, default=default_app_config.share, \
                         help="True to share the app on HuggingFace.") # False
-    parser.add_argument("--server_name", type=str, default=app_config.server_name, \
+    parser.add_argument("--server_name", type=str, default=default_app_config.server_name, \
                         help="The host or IP to bind to. If None, bind to localhost.") # None
-    parser.add_argument("--server_port", type=int, default=app_config.server_port, \
+    parser.add_argument("--server_port", type=int, default=default_app_config.server_port, \
                         help="The port to bind to.") # 7860
-    parser.add_argument("--queue_concurrency_count", type=int, default=app_config.queue_concurrency_count, \
+    parser.add_argument("--queue_concurrency_count", type=int, default=default_app_config.queue_concurrency_count, \
                         help="The number of concurrent requests to process.") # 1
-    parser.add_argument("--default_model_name", type=str, choices=whisper_models, default=app_config.default_model_name, \
+    parser.add_argument("--default_model_name", type=str, choices=whisper_models, default=default_app_config.default_model_name, \
                         help="The default model name.") # medium
-    parser.add_argument("--default_vad", type=str, default=app_config.default_vad, \
+    parser.add_argument("--default_vad", type=str, default=default_app_config.default_vad, \
                         help="The default VAD.") # silero-vad
-    parser.add_argument("--vad_parallel_devices", type=str, default=app_config.vad_parallel_devices, \
+    parser.add_argument("--vad_parallel_devices", type=str, default=default_app_config.vad_parallel_devices, \
                         help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.") # ""
-    parser.add_argument("--vad_cpu_cores", type=int, default=app_config.vad_cpu_cores, \
+    parser.add_argument("--vad_cpu_cores", type=int, default=default_app_config.vad_cpu_cores, \
                         help="The number of CPU cores to use for VAD pre-processing.") # 1
-    parser.add_argument("--vad_process_timeout", type=float, default=app_config.vad_process_timeout, \
+    parser.add_argument("--vad_process_timeout", type=float, default=default_app_config.vad_process_timeout, \
                         help="The number of seconds before inactivate processes are terminated. Use 0 to close processes immediately, or None for no timeout.") # 1800
-    parser.add_argument("--auto_parallel", type=bool, default=app_config.auto_parallel, \
+    parser.add_argument("--auto_parallel", type=bool, default=default_app_config.auto_parallel, \
                         help="True to use all available GPUs and CPU cores for processing. Use vad_cpu_cores/vad_parallel_devices to specify the number of CPU cores/GPUs to use.") # False
-    parser.add_argument("--output_dir", "-o", type=str, default=app_config.output_dir, \
-                        help="directory to save the outputs"), \
-    parser.add_argument("--whisper_implementation", type=str, default=app_config.whisper_implementation, choices=["whisper", "faster-whisper"],\
-                        help="the Whisper implementation to use"), \
+    parser.add_argument("--output_dir", "-o", type=str, default=default_app_config.output_dir, \
+                        help="directory to save the outputs")
+    parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
+                        help="the Whisper implementation to use")
 
     args = parser.parse_args().__dict__
 
-    updated_config = app_config.update(**args)
+    updated_config = default_app_config.update(**args)
+
+    print(f"Using {updated_config.whisper_implementation} for Whisper")
     create_ui(app_config=updated_config)
