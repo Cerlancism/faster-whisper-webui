@@ -11,7 +11,7 @@ from src.config import ApplicationConfig
 from src.download import download_url
 
 from src.utils import optional_float, optional_int, str2bool
-from src.whisperContainer import WhisperContainer
+from src.whisper.whisperFactory import create_whisper_container
 
 def cli():
     app_config = ApplicationConfig.create_default()
@@ -32,8 +32,10 @@ def cli():
     parser.add_argument("--output_dir", "-o", type=str, default=output_dir, \
                         help="directory to save the outputs")
     parser.add_argument("--verbose", type=str2bool, default=app_config.verbose, \
-                        help="whether to print out the progress and debug messages")
-
+                        help="whether to print out the progress and debug messages"), \
+    parser.add_argument("--whisper_implementation", type=str, default=app_config.whisper_implementation, choices=["whisper", "faster-whisper"],\
+                        help="the Whisper implementation to use"), \
+                        
     parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate"], \
                         help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
     parser.add_argument("--language", type=str, default=app_config.language, choices=sorted(LANGUAGES), \
@@ -92,6 +94,8 @@ def cli():
     device: str = args.pop("device")
     os.makedirs(output_dir, exist_ok=True)
 
+    whisper_implementation = args.pop("whisper_implementation")
+
     if model_name.endswith(".en") and args["language"] not in {"en", "English"}:
         warnings.warn(f"{model_name} is an English-only model but receipted '{args['language']}'; using English instead.")
         args["language"] = "en"
@@ -115,7 +119,8 @@ def cli():
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
     transcriber.set_auto_parallel(auto_parallel)
 
-    model = WhisperContainer(model_name, device=device, download_root=model_dir, models=app_config.models)
+    model = create_whisper_container(whisper_implementation=whisper_implementation, 
+                                     device=device, download_root=model_dir, models=app_config.models)
 
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)

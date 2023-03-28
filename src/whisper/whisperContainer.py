@@ -1,40 +1,27 @@
 # External programs
+import abc
 import os
 import sys
 from typing import List
+from urllib.parse import urlparse
+import urllib3
+from src.hooks.progressListener import ProgressListener
 
 import whisper
 from whisper import Whisper
 
 from src.config import ModelConfig
-from src.hooks.whisperProgressHook import ProgressListener, create_progress_listener_handle
+from src.hooks.whisperProgressHook import create_progress_listener_handle
 
 from src.modelCache import GLOBAL_MODEL_CACHE, ModelCache
+from src.utils import download_file
+from src.whisper.abstractWhisperContainer import AbstractWhisperCallback, AbstractWhisperContainer
 
-class WhisperContainer:
-    def __init__(self, model_name: str, device: str = None, download_root: str = None, 
-                 cache: ModelCache = None, models: List[ModelConfig] = []):
-        self.model_name = model_name
-        self.device = device
-        self.download_root = download_root
-        self.cache = cache
-
-        # Will be created on demand
-        self.model = None
-
-        # List of known models
-        self.models = models
+class WhisperContainer(AbstractWhisperContainer):
+    def __init__(self, model_name: str, device: str = None, download_root: str = None,
+                       cache: ModelCache = None, models: List[ModelConfig] = []):
+        super().__init__(model_name, device, download_root, cache, models)
     
-    def get_model(self):
-        if self.model is None:
-
-            if (self.cache is None):
-                self.model = self._create_model()
-            else:
-                model_key = "WhisperContainer." + self.model_name + ":" + (self.device if self.device else '')
-                self.model = self.cache.get(model_key, self._create_model)
-        return self.model
-
     def ensure_downloaded(self):
         """
         Ensure that the model is downloaded. This is useful if you want to ensure that the model is downloaded before
@@ -43,7 +30,7 @@ class WhisperContainer:
         # Warning: Using private API here
         try:
             root_dir = self.download_root
-            model_config = self.get_model_config()
+            model_config = self._get_model_config()
 
             if root_dir is None:
                 root_dir = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
@@ -60,7 +47,7 @@ class WhisperContainer:
             print("Error pre-downloading model: " + str(e))
             return False
 
-    def get_model_config(self) -> ModelConfig:
+    def _get_model_config(self) -> ModelConfig:
         """
         Get the model configuration for the model.
         """
@@ -71,10 +58,10 @@ class WhisperContainer:
 
     def _create_model(self):
         print("Loading whisper model " + self.model_name)
-        
-        model_config = self.get_model_config()
+        model_config = self._get_model_config()
+
         # Note that the model will not be downloaded in the case of an official Whisper model
-        model_path = model_config.download_url(self.download_root)
+        model_path = self._get_model_path(model_config, self.download_root)
 
         return whisper.load_model(model_path, device=self.device, download_root=self.download_root)
 
@@ -99,21 +86,73 @@ class WhisperContainer:
         """
         return WhisperCallback(self, language=language, task=task, initial_prompt=initial_prompt, **decodeOptions)
 
-    # This is required for multiprocessing
-    def __getstate__(self):
-        return { "model_name": self.model_name, "device": self.device, "download_root": self.download_root, "models": self.models }
+    def _get_model_path(self, model_config: ModelConfig, root_dir: str = None):
+        from src.conversion.hf_converter import convert_hf_whisper
+        """
+        Download the model.
 
-    def __setstate__(self, state):
-        self.model_name = state["model_name"]
-        self.device = state["device"]
-        self.download_root = state["download_root"]
-        self.models = state["models"]
-        self.model = None
-        # Depickled objects must use the global cache
-        self.cache = GLOBAL_MODEL_CACHE
+        Parameters
+        ----------
+        model_config: ModelConfig
+            The model configuration.
+        """
+        # See if path is already set
+        if model_config.path is not None:
+            return model_config.path
+        
+        if root_dir is None:
+            root_dir = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
 
+        model_type = model_config.type.lower() if model_config.type is not None else "whisper"
 
-class WhisperCallback:
+        if model_type in ["huggingface", "hf"]:
+            model_config.path = model_config.url
+            destination_target = os.path.join(root_dir, model_config.name + ".pt")
+
+            # Convert from HuggingFace format to Whisper format
+            if os.path.exists(destination_target):
+                print(f"File {destination_target} already exists, skipping conversion")
+            else:
+                print("Saving HuggingFace model in Whisper format to " + destination_target)
+                convert_hf_whisper(model_config.url, destination_target)
+
+            model_config.path = destination_target
+
+        elif model_type in ["whisper", "w"]:
+            model_config.path = model_config.url
+
+            # See if URL is just a file
+            if model_config.url in whisper._MODELS:
+                # No need to download anything - Whisper will handle it
+                model_config.path = model_config.url
+            elif model_config.url.startswith("file://"):
+                # Get file path
+                model_config.path = urlparse(model_config.url).path
+            # See if it is an URL
+            elif model_config.url.startswith("http://") or model_config.url.startswith("https://"):
+                # Extension (or file name)
+                extension = os.path.splitext(model_config.url)[-1]
+                download_target = os.path.join(root_dir, model_config.name + extension)
+
+                if os.path.exists(download_target) and not os.path.isfile(download_target):
+                    raise RuntimeError(f"{download_target} exists and is not a regular file")
+
+                if not os.path.isfile(download_target):
+                    download_file(model_config.url, download_target)
+                else:
+                    print(f"File {download_target} already exists, skipping download")
+
+                model_config.path = download_target
+            # Must be a local file
+            else:
+                model_config.path = model_config.url
+
+        else:
+            raise ValueError(f"Unknown model type {model_type}")
+
+        return model_config.path
+
+class WhisperCallback(AbstractWhisperCallback):
     def __init__(self, model_container: WhisperContainer, language: str = None, task: str = None, initial_prompt: str = None, **decodeOptions: dict):
         self.model_container = model_container
         self.language = language
@@ -133,14 +172,8 @@ class WhisperCallback:
             The target language of the transcription. If not specified, the language will be inferred from the audio content.
         task: str
             The task - either translate or transcribe.
-        prompt: str
-            The prompt to use for the transcription.
-        detected_language: str
-            The detected language of the audio file.
-
-        Returns
-        -------
-        The result of the Whisper call.
+        progress_listener: ProgressListener
+            A callback to receive progress updates.
         """
         model = self.model_container.get_model()
 
@@ -156,11 +189,3 @@ class WhisperCallback:
             initial_prompt=self._concat_prompt(self.initial_prompt, prompt) if segment_index == 0 else prompt, \
             **self.decodeOptions
         )
-
-    def _concat_prompt(self, prompt1, prompt2):
-        if (prompt1 is None):
-            return prompt2
-        elif (prompt2 is None):
-            return prompt1
-        else:
-            return prompt1 + " " + prompt2

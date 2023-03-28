@@ -11,8 +11,11 @@ import zipfile
 import numpy as np
 
 import torch
+
 from src.config import ApplicationConfig
-from src.hooks.whisperProgressHook import ProgressListener, SubTaskProgressListener, create_progress_listener_handle
+from src.hooks.progressListener import ProgressListener
+from src.hooks.subTaskProgressListener import SubTaskProgressListener
+from src.hooks.whisperProgressHook import create_progress_listener_handle
 from src.modelCache import ModelCache
 from src.source import get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
@@ -26,7 +29,8 @@ import gradio as gr
 from src.download import ExceededMaximumDuration, download_url
 from src.utils import slugify, write_srt, write_vtt
 from src.vad import AbstractTranscription, NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
-from src.whisperContainer import WhisperContainer
+from src.whisper.abstractWhisperContainer import AbstractWhisperContainer
+from src.whisper.whisperFactory import create_whisper_container
 
 # Configure more application defaults in config.json5
 
@@ -121,7 +125,8 @@ class WhisperTranscriber:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                model = WhisperContainer(model_name=selectedModel, cache=self.model_cache, models=self.app_config.models)
+                model = create_whisper_container(whisper_implementation=app_config.whisper_implementation, 
+                                                 model_name=selectedModel, cache=self.model_cache, models=self.app_config.models)
 
                 # Result
                 download = []
@@ -223,7 +228,7 @@ class WhisperTranscriber:
         except ExceededMaximumDuration as e:
             return [], ("[ERROR]: Maximum remote video length is " + str(e.maxDuration) + "s, file was " + str(e.videoDuration) + "s"), "[ERROR]"
 
-    def transcribe_file(self, model: WhisperContainer, audio_path: str, language: str, task: str = None, vad: str = None, 
+    def transcribe_file(self, model: AbstractWhisperContainer, audio_path: str, language: str, task: str = None, vad: str = None, 
                         vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, 
                         progressListener: ProgressListener = None, **decodeOptions: dict):
         
@@ -507,7 +512,9 @@ if __name__ == '__main__':
     parser.add_argument("--auto_parallel", type=bool, default=app_config.auto_parallel, \
                         help="True to use all available GPUs and CPU cores for processing. Use vad_cpu_cores/vad_parallel_devices to specify the number of CPU cores/GPUs to use.") # False
     parser.add_argument("--output_dir", "-o", type=str, default=app_config.output_dir, \
-                        help="directory to save the outputs") # None
+                        help="directory to save the outputs"), \
+    parser.add_argument("--whisper_implementation", type=str, default=app_config.whisper_implementation, choices=["whisper", "faster-whisper"],\
+                        help="the Whisper implementation to use"), \
 
     args = parser.parse_args().__dict__
 

@@ -2,7 +2,6 @@
 
 from copy import deepcopy
 import torch
-from transformers import WhisperForConditionalGeneration
 
 WHISPER_MAPPING = {
     "layers": "blocks",
@@ -43,7 +42,8 @@ def rename_keys(s_dict):
     return s_dict
 
 
-def convert_hf_whisper(hf_model_name_or_path: str, whisper_state_path: str):
+def convert_hf_whisper(hf_model_name_or_path: str, whisper_state_path: str)
+    from transformers import WhisperForConditionalGeneration
     transformer_model = WhisperForConditionalGeneration.from_pretrained(hf_model_name_or_path)
     config = transformer_model.config
 

@@ -5,11 +5,13 @@ import time
 from typing import Any, Deque, Iterator, List, Dict
 
 from pprint import pprint
-from src.hooks.whisperProgressHook import ProgressListener, SubTaskProgressListener, create_progress_listener_handle
+from src.hooks.progressListener import ProgressListener
+from src.hooks.subTaskProgressListener import SubTaskProgressListener
+from src.hooks.whisperProgressHook import create_progress_listener_handle
 from src.modelCache import GLOBAL_MODEL_CACHE, ModelCache
 
 from src.segments import merge_timestamps
-from src.whisperContainer import WhisperCallback
+from src.whisper.abstractWhisperContainer import AbstractWhisperCallback
 
 # Workaround for https://github.com/tensorflow/tensorflow/issues/48797
 try:
@@ -136,7 +138,7 @@ class AbstractTranscription(ABC):
             pprint(merged)
         return merged
 
-    def transcribe(self, audio: str, whisperCallable: WhisperCallback, config: TranscriptionConfig, 
+    def transcribe(self, audio: str, whisperCallable: AbstractWhisperCallback, config: TranscriptionConfig, 
                    progressListener: ProgressListener = None):
         """
         Transcribe the given audo file.

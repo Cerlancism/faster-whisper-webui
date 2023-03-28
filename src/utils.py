@@ -4,6 +4,9 @@ import re
 
 import zlib
 from typing import Iterator, TextIO
+import tqdm
+
+import urllib3
 
 
 def exact_div(x, y):
@@ -113,3 +116,20 @@ def slugify(value, allow_unicode=False):
         value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
     value = re.sub(r'[^\w\s-]', '', value.lower())
     return re.sub(r'[-\s]+', '-', value).strip('-_')
+
+def download_file(url: str, destination: str):
+        with urllib3.request.urlopen(url) as source, open(destination, "wb") as output:
+            with tqdm(
+                total=int(source.info().get("Content-Length")),
+                ncols=80,
+                unit="iB",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as loop:
+                while True:
+                    buffer = source.read(8192)
+                    if not buffer:
+                        break
+
+                    output.write(buffer)
+                    loop.update(len(buffer))

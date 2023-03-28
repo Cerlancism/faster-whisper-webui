@@ -62,6 +62,9 @@
 
     // * General options *
 
+    // The default implementation to use for Whisper. Can be "whisper" or "faster-whisper".
+    "whisper_implementation": "whisper",
+
     // The default model name.
     "default_model_name": "medium",
     // The default VAD.

@@ -2,14 +2,15 @@ import multiprocessing
 from queue import Empty
 import threading
 import time
-from src.hooks.whisperProgressHook import ProgressListener
+from src.hooks.progressListener import ProgressListener
 from src.vad import AbstractTranscription, TranscriptionConfig, get_audio_duration
-from src.whisperContainer import WhisperCallback
 
 from multiprocessing import Pool, Queue
 
 from typing import Any, Dict, List, Union
 import os
+
+from src.whisper.abstractWhisperContainer import AbstractWhisperCallback
 
 class _ProgressListenerToQueue(ProgressListener):
     def __init__(self, progress_queue: Queue):
@@ -104,7 +105,7 @@ class ParallelTranscription(AbstractTranscription):
     def __init__(self, sampling_rate: int = 16000):
         super().__init__(sampling_rate=sampling_rate)
 
-    def transcribe_parallel(self, transcription: AbstractTranscription, audio: str, whisperCallable: WhisperCallback, config: TranscriptionConfig, 
+    def transcribe_parallel(self, transcription: AbstractTranscription, audio: str, whisperCallable: AbstractWhisperCallback, config: TranscriptionConfig, 
                             cpu_device_count: int, gpu_devices: List[str], cpu_parallel_context: ParallelContext = None, gpu_parallel_context: ParallelContext = None, 
                             progress_listener: ProgressListener = None):
         total_duration = get_audio_duration(audio)
@@ -276,7 +277,7 @@ class ParallelTranscription(AbstractTranscription):
             return config.override_timestamps
         return super().get_merged_timestamps(timestamps, config, total_duration)
 
-    def transcribe(self, audio: str, whisperCallable: WhisperCallback, config: ParallelTranscriptionConfig, 
+    def transcribe(self, audio: str, whisperCallable: AbstractWhisperCallback, config: ParallelTranscriptionConfig, 
                    progressListener: ProgressListener = None):
         # Override device ID the first time
         if (os.environ.get("INITIALIZED", None) is None):
