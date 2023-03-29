@@ -80,7 +80,7 @@ def cli():
                         help="if True, provide the previous output of the model as a prompt for the next window; disabling may make the text inconsistent across windows, but the model becomes less prone to getting stuck in a failure loop")
     parser.add_argument("--fp16", type=str2bool, default=app_config.fp16, \
                         help="whether to perform inference in fp16; True by default")
-    parser.add_argument("--compute_type", type=str, default=app_config.compute_type, choices=["int8", "int8_float16", "int16", "float16"], \
+    parser.add_argument("--compute_type", type=str, default=app_config.compute_type, choices=["default", "auto", "int8", "int8_float16", "int16", "float16", "float32"], \
                         help="the compute type to use for inference")
 
     parser.add_argument("--temperature_increment_on_fallback", type=optional_float, default=app_config.temperature_increment_on_fallback, \

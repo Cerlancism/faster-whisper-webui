@@ -118,7 +118,7 @@
     // Whether to perform inference in fp16; True by default
     "fp16": true,
     // The compute type used by faster-whisper. Can be "int8". "int16" or "float16".
-    "compute_type": "float16",
+    "compute_type": "auto",
     // Temperature to increase when falling back when the decoding fails to meet either of the thresholds below
     "temperature_increment_on_fallback": 0.2,
     // If the gzip compression ratio is higher than this value, treat the decoding as failed
