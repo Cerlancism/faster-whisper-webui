@@ -519,7 +519,7 @@ if __name__ == '__main__':
                         help="directory to save the outputs")
     parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
                         help="the Whisper implementation to use")
-    parser.add_argument("--compute_type", type=str, default=default_app_config.compute_type, choices=["int8", "int8_float16", "int16", "float16"], \
+    parser.add_argument("--compute_type", type=str, default=default_app_config.compute_type, choices=["default", "auto", "int8", "int8_float16", "int16", "float16", "float32"], \
                         help="the compute type to use for inference")
 
     args = parser.parse_args().__dict__
