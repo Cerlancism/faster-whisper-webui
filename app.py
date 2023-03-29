@@ -526,5 +526,4 @@ if __name__ == '__main__':
 
     updated_config = default_app_config.update(**args)
 
-    print(f"Using {updated_config.whisper_implementation} for Whisper")
     create_ui(app_config=updated_config)
