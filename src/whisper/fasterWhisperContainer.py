@@ -77,6 +77,8 @@ class FasterWhisperCallback(AbstractWhisperCallback):
         self.task = task
         self.initial_prompt = initial_prompt
         self.decodeOptions = decodeOptions
+
+        self._printed_warning = False
         
     def invoke(self, audio, segment_index: int, prompt: str, detected_language: str, progress_listener: ProgressListener = None):
         """
@@ -107,7 +109,9 @@ class FasterWhisperCallback(AbstractWhisperCallback):
         suppress_tokens = decodeOptions.pop("suppress_tokens", None)
 
         if (decodeOptions.pop("fp16", None) is not None):
-            print("WARNING: fp16 option is ignored by faster-whisper - use compute_type instead.")
+            if not self._printed_warning:
+                print("WARNING: fp16 option is ignored by faster-whisper - use compute_type instead.")
+            self._printed_warning = True
 
         # Fix up decode options
         if (logprob_threshold is not None):
