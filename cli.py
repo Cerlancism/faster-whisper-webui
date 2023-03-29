@@ -6,9 +6,10 @@ import warnings
 import numpy as np
 
 import torch
-from app import LANGUAGES, WhisperTranscriber
+from app import WhisperTranscriber
 from src.config import ApplicationConfig
 from src.download import download_url
+from src.languages import get_language_names
 
 from src.utils import optional_float, optional_int, str2bool
 from src.whisper.whisperFactory import create_whisper_container
@@ -41,7 +42,7 @@ def cli():
                         
     parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate"], \
                         help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
-    parser.add_argument("--language", type=str, default=app_config.language, choices=sorted(LANGUAGES), \
+    parser.add_argument("--language", type=str, default=app_config.language, choices=sorted(get_language_names()), \
                         help="language spoken in the audio, specify None to perform language detection")
 
     parser.add_argument("--vad", type=str, default=app_config.default_vad, choices=["none", "silero-vad", "silero-vad-skip-gaps", "silero-vad-expand-into-gaps", "periodic-vad"], \
