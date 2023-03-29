@@ -65,7 +65,7 @@
     // The default implementation to use for Whisper. Can be "whisper" or "faster-whisper".
     // Note that you must either install the requirements for faster-whisper (requirements-fasterWhisper.txt) 
     // or whisper (requirements.txt)
-    "whisper_implementation": "whisper",
+    "whisper_implementation": "faster-whisper",
 
     // The default model name.
     "default_model_name": "medium",
