@@ -4,6 +4,7 @@ import os
 import sys
 from typing import List
 from urllib.parse import urlparse
+import torch
 import urllib3
 from src.hooks.progressListener import ProgressListener
 
@@ -18,9 +19,12 @@ from src.utils import download_file
 from src.whisper.abstractWhisperContainer import AbstractWhisperCallback, AbstractWhisperContainer
 
 class WhisperContainer(AbstractWhisperContainer):
-    def __init__(self, model_name: str, device: str = None, download_root: str = None,
-                       cache: ModelCache = None, models: List[ModelConfig] = []):
-        super().__init__(model_name, device, download_root, cache, models)
+    def __init__(self, model_name: str, device: str = None, compute_type: str = "float16",
+                 download_root: str = None,
+                 cache: ModelCache = None, models: List[ModelConfig] = []):
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        super().__init__(model_name, device, compute_type, download_root, cache, models)
     
     def ensure_downloaded(self):
         """
@@ -184,8 +188,14 @@ class WhisperCallback(AbstractWhisperCallback):
             return self._transcribe(model, audio, segment_index, prompt, detected_language)
     
     def _transcribe(self, model: Whisper, audio, segment_index: int, prompt: str, detected_language: str):
+        decodeOptions = self.decodeOptions.copy()
+
+        # Add fp16
+        if self.model_container.compute_type in ["fp16", "float16"]:
+            decodeOptions["fp16"] = True
+
         return model.transcribe(audio, \
             language=self.language if self.language else detected_language, task=self.task, \
             initial_prompt=self._concat_prompt(self.initial_prompt, prompt) if segment_index == 0 else prompt, \
-            **self.decodeOptions
+            **decodeOptions
         )

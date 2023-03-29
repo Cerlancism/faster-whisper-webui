@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Union
 
 from faster_whisper import WhisperModel, download_model
 from src.config import ModelConfig
@@ -8,10 +8,10 @@ from src.modelCache import ModelCache
 from src.whisper.abstractWhisperContainer import AbstractWhisperCallback, AbstractWhisperContainer
 
 class FasterWhisperContainer(AbstractWhisperContainer):
-    def __init__(self, model_name: str, device: str = None, download_root: str = None,
-                       cache: ModelCache = None, 
-                       models: List[ModelConfig] = []):
-        super().__init__(model_name, device, download_root, cache, models)
+    def __init__(self, model_name: str, device: str = None, compute_type: str = "float16",
+                       download_root: str = None,
+                       cache: ModelCache = None, models: List[ModelConfig] = []):
+        super().__init__(model_name, device, compute_type, download_root, cache, models)
     
     def ensure_downloaded(self):
         """
@@ -35,7 +35,7 @@ class FasterWhisperContainer(AbstractWhisperContainer):
         return None
 
     def _create_model(self):
-        print("Loading faster whisper model " + self.model_name)
+        print("Loading faster whisper model " + self.model_name + " for device " + str(self.device))
         model_config = self._get_model_config()
         
         if model_config.type == "whisper" and model_config.url not in ["tiny", "base", "small", "medium", "large", "large-v2"]:
@@ -46,7 +46,7 @@ class FasterWhisperContainer(AbstractWhisperContainer):
         if (device is None):
             device = "auto"
 
-        model = WhisperModel(model_config.url, device=device, compute_type="float16")
+        model = WhisperModel(model_config.url, device=device, compute_type=self.compute_type)
         return model
 
     def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, **decodeOptions: dict):
@@ -96,10 +96,33 @@ class FasterWhisperCallback(AbstractWhisperCallback):
         model: WhisperModel = self.model_container.get_model()
         language_code = self._lookup_language_code(self.language) if self.language else None
 
+        # Copy decode options and remove options that are not supported by faster-whisper
+        decodeOptions = self.decodeOptions.copy()
+        verbose = decodeOptions.pop("verbose", None)
+
+        logprob_threshold = decodeOptions.pop("logprob_threshold", None)
+
+        patience = decodeOptions.pop("patience", None)
+        length_penalty = decodeOptions.pop("length_penalty", None)
+        suppress_tokens = decodeOptions.pop("suppress_tokens", None)
+
+        if (decodeOptions.pop("fp16", None) is not None):
+            print("WARNING: fp16 option is ignored by faster-whisper - use compute_type instead.")
+
+        # Fix up decode options
+        if (logprob_threshold is not None):
+            decodeOptions["log_prob_threshold"] = logprob_threshold
+
+        decodeOptions["patience"] = float(patience) if patience is not None else 1.0
+        decodeOptions["length_penalty"] = float(length_penalty) if length_penalty is not None else 1.0
+
+        # See if supress_tokens is a string - if so, convert it to a list of ints
+        decodeOptions["suppress_tokens"] = self._split_suppress_tokens(suppress_tokens)
+
         segments_generator, info = model.transcribe(audio, \
             language=language_code if language_code else detected_language, task=self.task, \
             initial_prompt=self._concat_prompt(self.initial_prompt, prompt) if segment_index == 0 else prompt, \
-            **self.decodeOptions
+            **decodeOptions
         )
 
         segments = []
@@ -109,6 +132,8 @@ class FasterWhisperCallback(AbstractWhisperCallback):
 
             if progress_listener is not None:
                 progress_listener.on_progress(segment.end, info.duration)
+            if verbose:
+                print(segment.text)
 
         text = " ".join([segment.text for segment in segments])
 
@@ -140,6 +165,14 @@ class FasterWhisperCallback(AbstractWhisperCallback):
         if progress_listener is not None:
             progress_listener.on_finished()
         return result
+
+    def _split_suppress_tokens(self, suppress_tokens: Union[str, List[int]]):
+        if (suppress_tokens is None):
+            return None
+        if (isinstance(suppress_tokens, list)):
+            return suppress_tokens
+
+        return [int(token) for token in suppress_tokens.split(",")]
 
     def _lookup_language_code(self, language: str):
         lookup = {

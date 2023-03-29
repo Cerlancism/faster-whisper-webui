@@ -104,7 +104,7 @@
     // Number of beams in beam search, only applicable when temperature is zero
     "beam_size": 5,
     // Optional patience value to use in beam decoding, as in https://arxiv.org/abs/2204.05424, the default (1.0) is equivalent to conventional beam search
-    "patience": null,
+    "patience": 1,
     // Optional token length penalty coefficient (alpha) as in https://arxiv.org/abs/1609.08144, uses simple length normalization by default
     "length_penalty": null,
     // Comma-separated list of token ids to suppress during sampling; '-1' will suppress most special characters except common punctuations
@@ -115,6 +115,8 @@
     "condition_on_previous_text": true,
     // Whether to perform inference in fp16; True by default
     "fp16": true,
+    // The compute type used by faster-whisper. Can be "int8". "int16" or "float16".
+    "compute_type": "float16",
     // Temperature to increase when falling back when the decoding fails to meet either of the thresholds below
     "temperature_increment_on_fallback": 0.2,
     // If the gzip compression ratio is higher than this value, treat the decoding as failed

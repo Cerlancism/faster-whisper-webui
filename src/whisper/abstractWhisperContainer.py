@@ -33,10 +33,12 @@ class AbstractWhisperCallback:
             return prompt1 + " " + prompt2
 
 class AbstractWhisperContainer:
-    def __init__(self, model_name: str, device: str = None, download_root: str = None,
-                       cache: ModelCache = None, models: List[ModelConfig] = []):
+    def __init__(self, model_name: str, device: str = None, compute_type: str = "float16",
+                 download_root: str = None,
+                 cache: ModelCache = None, models: List[ModelConfig] = []):
         self.model_name = model_name
         self.device = device
+        self.compute_type = compute_type
         self.download_root = download_root
         self.cache = cache
 
@@ -87,13 +89,20 @@ class AbstractWhisperContainer:
 
     # This is required for multiprocessing
     def __getstate__(self):
-        return { "model_name": self.model_name, "device": self.device, "download_root": self.download_root, "models": self.models }
+        return { 
+            "model_name": self.model_name, 
+            "device": self.device, 
+            "download_root": self.download_root, 
+            "models": self.models, 
+            "compute_type": self.compute_type 
+        }
 
     def __setstate__(self, state):
         self.model_name = state["model_name"]
         self.device = state["device"]
         self.download_root = state["download_root"]
         self.models = state["models"]
+        self.compute_type = state["compute_type"]
         self.model = None
         # Depickled objects must use the global cache
         self.cache = GLOBAL_MODEL_CACHE

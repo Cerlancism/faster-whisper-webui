@@ -126,7 +126,8 @@ class WhisperTranscriber:
                 selectedModel = modelName if modelName is not None else "base"
 
                 model = create_whisper_container(whisper_implementation=self.app_config.whisper_implementation, 
-                                                 model_name=selectedModel, cache=self.model_cache, models=self.app_config.models)
+                                                 model_name=selectedModel, compute_type=self.app_config.compute_type, 
+                                                 cache=self.model_cache, models=self.app_config.models)
 
                 # Result
                 download = []
@@ -518,6 +519,8 @@ if __name__ == '__main__':
                         help="directory to save the outputs")
     parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
                         help="the Whisper implementation to use")
+    parser.add_argument("--compute_type", type=str, default=default_app_config.compute_type, choices=["int8", "int8_float16", "int16", "float16"], \
+                        help="the compute type to use for inference")
 
     args = parser.parse_args().__dict__
 

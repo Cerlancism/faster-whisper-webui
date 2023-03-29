@@ -80,6 +80,8 @@ def cli():
                         help="if True, provide the previous output of the model as a prompt for the next window; disabling may make the text inconsistent across windows, but the model becomes less prone to getting stuck in a failure loop")
     parser.add_argument("--fp16", type=str2bool, default=app_config.fp16, \
                         help="whether to perform inference in fp16; True by default")
+    parser.add_argument("--compute_type", type=str, default=app_config.compute_type, choices=["int8", "int8_float16", "int16", "float16"], \
+                        help="the compute type to use for inference")
 
     parser.add_argument("--temperature_increment_on_fallback", type=optional_float, default=app_config.temperature_increment_on_fallback, \
                         help="temperature to increase when falling back when the decoding fails to meet either of the thresholds below")
@@ -119,12 +121,14 @@ def cli():
     vad_cpu_cores = args.pop("vad_cpu_cores")
     auto_parallel = args.pop("auto_parallel")
     
+    compute_type = args.pop("compute_type")
+
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores, app_config=app_config)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
     transcriber.set_auto_parallel(auto_parallel)
 
-    model = create_whisper_container(whisper_implementation=whisper_implementation, 
-                                     device=device, download_root=model_dir, models=app_config.models)
+    model = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
+                                     device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)
 
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)

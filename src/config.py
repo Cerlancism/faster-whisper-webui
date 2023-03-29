@@ -39,12 +39,10 @@ class ApplicationConfig:
                  patience: float = None, length_penalty: float = None,
                  suppress_tokens: str = "-1", initial_prompt: str = None,
                  condition_on_previous_text: bool = True, fp16: bool = True,
+                 compute_type: str = "float16", 
                  temperature_increment_on_fallback: float = 0.2, compression_ratio_threshold: float = 2.4,
                  logprob_threshold: float = -1.0, no_speech_threshold: float = 0.6):
         
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-
         self.models = models
         
         # WebUI settings
@@ -82,6 +80,7 @@ class ApplicationConfig:
         self.initial_prompt = initial_prompt
         self.condition_on_previous_text = condition_on_previous_text
         self.fp16 = fp16
+        self.compute_type = compute_type
         self.temperature_increment_on_fallback = temperature_increment_on_fallback
         self.compression_ratio_threshold = compression_ratio_threshold
         self.logprob_threshold = logprob_threshold
