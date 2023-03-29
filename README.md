@@ -144,10 +144,11 @@ sudo docker run -d --gpus=all -p 7860:7860 registry.gitlab.com/aadnk/whisper-web
 
 ## Custom Arguments
 
-You can also pass custom arguments to `app.py` in the Docker container, for instance to be able to use all the GPUs in parallel:
+You can also pass custom arguments to `app.py` in the Docker container, for instance to be able to use all the GPUs in parallel (replace administrator with your user):
 ```
 sudo docker run -d --gpus all -p 7860:7860 \
 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper \
+--mount type=bind,source=/home/administrator/.cache/huggingface,target=/root/.cache/huggingface \
 --restart=on-failure:15 registry.gitlab.com/aadnk/whisper-webui:latest \
 app.py --input_audio_max_duration -1 --server_name 0.0.0.0 --auto_parallel True \
 --default_vad silero-vad --default_model_name large
@@ -157,6 +158,7 @@ You can also call `cli.py` the same way:
 ```
 sudo docker run --gpus all \
 --mount type=bind,source=/home/administrator/.cache/whisper,target=/root/.cache/whisper \
+--mount type=bind,source=/home/administrator/.cache/huggingface,target=/root/.cache/huggingface \
 --mount type=bind,source=${PWD},target=/app/data \
 registry.gitlab.com/aadnk/whisper-webui:latest \
 cli.py --model large --auto_parallel True --vad silero-vad \
