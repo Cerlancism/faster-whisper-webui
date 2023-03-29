@@ -14,7 +14,7 @@ RUN apt-get -y install python3-tk
 RUN  python3 -m pip install --upgrade pip
 
 RUN if [ "${WHISPER_IMPLEMENTATION}" = "whisper" ]; then \
-    python3 -m pip install -r /opt/whisper-webui/requirements.txt; \
+    python3 -m pip install -r /opt/whisper-webui/requirements-whisper.txt; \
   else \
     python3 -m pip install -r /opt/whisper-webui/requirements-fasterWhisper.txt; \
   fi

@@ -52,12 +52,13 @@ You can upload multiple files either through the "Upload files" option, or as a 
 Each audio file will then be processed in turn, and the resulting SRT/VTT/Transcript will be made available in the "Download" section. 
 When more than one file is processed, the UI will also generate a "All_Output" zip file containing all the text output files.
 
-## Faster Whisper
+## Whisper Implementation
 
-You can also use [Faster Whisper](https://github.com/guillaumekln/faster-whisper) as a drop-in replacement for the default Whisper which achieves up to a 4x speedup 
-and 2x reduction in memory usage.
+You can choose between using `whisper` or `faster-whisper`. [Faster Whisper](https://github.com/guillaumekln/faster-whisper) as a drop-in replacement for the 
+default Whisper which achieves up to a 4x speedup and 2x reduction in memory usage. 
 
-To use Faster Whisper, install the requirements in `requirements-fastWhisper.txt`:
+You can install the requirements for a specific Whisper implementation in `requirements-fastWhisper.txt` 
+or `requirements-whisper.txt`:
 ```
 pip install -r requirements-fastWhisper.txt
 ```
