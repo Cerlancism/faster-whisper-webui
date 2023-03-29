@@ -16,6 +16,7 @@ from src.config import ApplicationConfig
 from src.hooks.progressListener import ProgressListener
 from src.hooks.subTaskProgressListener import SubTaskProgressListener
 from src.hooks.whisperProgressHook import create_progress_listener_handle
+from src.languages import get_language_names
 from src.modelCache import ModelCache
 from src.source import get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
@@ -39,26 +40,6 @@ MAX_FILE_PREFIX_LENGTH = 17
 
 # Limit auto_parallel to a certain number of CPUs (specify vad_cpu_cores to get a higher number)
 MAX_AUTO_CPU_CORES = 8
-
-LANGUAGES = [ 
- "English", "Chinese", "German", "Spanish", "Russian", "Korean", 
- "French", "Japanese", "Portuguese", "Turkish", "Polish", "Catalan", 
- "Dutch", "Arabic", "Swedish", "Italian", "Indonesian", "Hindi", 
- "Finnish", "Vietnamese", "Hebrew", "Ukrainian", "Greek", "Malay", 
- "Czech", "Romanian", "Danish", "Hungarian", "Tamil", "Norwegian", 
- "Thai", "Urdu", "Croatian", "Bulgarian", "Lithuanian", "Latin", 
- "Maori", "Malayalam", "Welsh", "Slovak", "Telugu", "Persian", 
- "Latvian", "Bengali", "Serbian", "Azerbaijani", "Slovenian", 
- "Kannada", "Estonian", "Macedonian", "Breton", "Basque", "Icelandic", 
- "Armenian", "Nepali", "Mongolian", "Bosnian", "Kazakh", "Albanian",
- "Swahili", "Galician", "Marathi", "Punjabi", "Sinhala", "Khmer", 
- "Shona", "Yoruba", "Somali", "Afrikaans", "Occitan", "Georgian", 
- "Belarusian", "Tajik", "Sindhi", "Gujarati", "Amharic", "Yiddish", 
- "Lao", "Uzbek", "Faroese", "Haitian Creole", "Pashto", "Turkmen", 
- "Nynorsk", "Maltese", "Sanskrit", "Luxembourgish", "Myanmar", "Tibetan",
- "Tagalog", "Malagasy", "Assamese", "Tatar", "Hawaiian", "Lingala", 
- "Hausa", "Bashkir", "Javanese", "Sundanese"
-]
 
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large", "large-v1", "large-v2"]
 
@@ -433,7 +414,7 @@ def create_ui(app_config: ApplicationConfig):
 
     simple_inputs = lambda : [
         gr.Dropdown(choices=whisper_models, value=app_config.default_model_name, label="Model"),
-        gr.Dropdown(choices=sorted(LANGUAGES), label="Language", value=app_config.language),
+        gr.Dropdown(choices=sorted(get_language_names()), label="Language", value=app_config.language),
         gr.Text(label="URL (YouTube, etc.)"),
         gr.File(label="Upload Files", file_count="multiple"),
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),

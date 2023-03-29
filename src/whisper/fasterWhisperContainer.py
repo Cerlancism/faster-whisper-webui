@@ -4,6 +4,7 @@ from typing import List, Union
 from faster_whisper import WhisperModel, download_model
 from src.config import ModelConfig
 from src.hooks.progressListener import ProgressListener
+from src.languages import get_language_from_name
 from src.modelCache import ModelCache
 from src.whisper.abstractWhisperContainer import AbstractWhisperCallback, AbstractWhisperContainer
 
@@ -179,24 +180,9 @@ class FasterWhisperCallback(AbstractWhisperCallback):
         return [int(token) for token in suppress_tokens.split(",")]
 
     def _lookup_language_code(self, language: str):
-        lookup = {
-            "english": "en", "chinese": "zh", "german": "de", "spanish": "es", "russian": "ru", "korean": "ko",
-            "french": "fr", "japanese": "ja", "portuguese": "pt", "turkish": "tr", "polish": "pl", "catalan": "ca",
-            "dutch": "nl", "arabic": "ar", "swedish": "sv", "italian": "it", "indonesian": "id", "hindi": "hi",
-            "finnish": "fi", "vietnamese": "vi", "hebrew": "he", "ukrainian": "uk", "greek": "el", "malay": "ms",
-            "czech": "cs", "romanian": "ro", "danish": "da", "hungarian": "hu", "tamil": "ta", "norwegian": "no",
-            "thai": "th", "urdu": "ur", "croatian": "hr", "bulgarian": "bg", "lithuanian": "lt", "latin": "la",
-            "maori": "mi", "malayalam": "ml", "welsh": "cy", "slovak": "sk", "telugu": "te", "persian": "fa",
-            "latvian": "lv", "bengali": "bn", "serbian": "sr", "azerbaijani": "az", "slovenian": "sl",
-            "kannada": "kn", "estonian": "et", "macedonian": "mk", "breton": "br", "basque": "eu", "icelandic": "is",
-            "armenian": "hy", "nepali": "ne", "mongolian": "mn", "bosnian": "bs", "kazakh": "kk", "albanian": "sq",
-            "swahili": "sw", "galician": "gl", "marathi": "mr", "punjabi": "pa", "sinhala": "si", "khmer": "km",
-            "shona": "sn", "yoruba": "yo", "somali": "so", "afrikaans": "af", "occitan": "oc", "georgian": "ka",
-            "belarusian": "be", "tajik": "tg", "sindhi": "sd", "gujarati": "gu", "amharic": "am", "yiddish": "yi",
-            "lao": "lo", "uzbek": "uz", "faroese": "fo", "haitian creole": "ht", "pashto": "ps", "turkmen": "tk",
-            "nynorsk": "nn", "maltese": "mt", "sanskrit": "sa", "luxembourgish": "lb", "myanmar": "my", "tibetan": "bo",
-            "tagalog": "tl", "malagasy": "mg", "assamese": "as", "tatar": "tt", "hawaiian": "haw", "lingala": "ln",
-            "hausa": "ha", "bashkir": "ba", "javanese": "jv", "sundanese": "su"
-        }
+        language = get_language_from_name(language)
 
-        return lookup.get(language.lower() if language is not None else None, language)
+        if language is None:
+            raise ValueError("Invalid language: " + language)
+        
+        return language.code
