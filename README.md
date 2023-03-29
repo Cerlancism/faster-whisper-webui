@@ -1,8 +1,8 @@
 ---
 title: Whisper Webui
-emoji: ⚡
-colorFrom: pink
-colorTo: purple
+emoji: 🏃
+colorFrom: indigo
+colorTo: blue
 sdk: gradio
 sdk_version: 3.23.0
 app_file: app.py
