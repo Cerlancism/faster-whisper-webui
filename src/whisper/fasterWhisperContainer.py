@@ -7,6 +7,7 @@ from src.hooks.progressListener import ProgressListener
 from src.languages import get_language_from_name
 from src.modelCache import ModelCache
 from src.whisper.abstractWhisperContainer import AbstractWhisperCallback, AbstractWhisperContainer
+from src.utils import format_timestamp
 
 class FasterWhisperContainer(AbstractWhisperContainer):
     def __init__(self, model_name: str, device: str = None, compute_type: str = "float16",
@@ -138,7 +139,8 @@ class FasterWhisperCallback(AbstractWhisperCallback):
             if progress_listener is not None:
                 progress_listener.on_progress(segment.end, info.duration)
             if verbose:
-                print(segment.text)
+                print("[{}->{}] {}".format(format_timestamp(segment.start, True), format_timestamp(segment.end, True),
+                                          segment.text))
 
         text = " ".join([segment.text for segment in segments])
 
