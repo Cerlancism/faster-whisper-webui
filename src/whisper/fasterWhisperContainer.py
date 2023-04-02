@@ -139,7 +139,7 @@ class FasterWhisperCallback(AbstractWhisperCallback):
             if progress_listener is not None:
                 progress_listener.on_progress(segment.end, info.duration)
             if verbose:
-                print("[{}->{}]{}".format(format_timestamp(segment.start, True), format_timestamp(segment.end, True),
+                print("[{}->{}] {}".format(format_timestamp(segment.start, True), format_timestamp(segment.end, True),
                                           segment.text))
 
         text = " ".join([segment.text for segment in segments])
