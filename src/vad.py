@@ -205,10 +205,15 @@ class AbstractTranscription(ABC):
 
                 print("Running whisper from ", format_timestamp(segment_start), " to ", format_timestamp(segment_end), ", duration: ", 
                     segment_duration, "expanded: ", segment_expand_amount, "prompt: ", segment_prompt, "language: ", detected_language)
-                
+
+                perf_start_time = time.perf_counter()
+
                 scaled_progress_listener = SubTaskProgressListener(progressListener, base_task_total=progress_total_duration, 
                                                                    sub_task_start=segment_start - progress_start_offset, sub_task_total=segment_duration) 
                 segment_result = whisperCallable.invoke(segment_audio, segment_index, segment_prompt, detected_language, progress_listener=scaled_progress_listener)
+
+                perf_end_time = time.perf_counter()
+                print("Whisper took {} seconds".format(perf_end_time - perf_start_time))
 
                 adjusted_segments = self.adjust_timestamp(segment_result["segments"], adjust_seconds=segment_start, max_source_time=segment_duration)
 
