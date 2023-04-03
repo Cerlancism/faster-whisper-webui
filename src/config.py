@@ -1,3 +1,4 @@
+from enum import Enum
 import urllib
 
 import os
@@ -23,6 +24,21 @@ class ModelConfig:
         self.path = path
         self.type = type
 
+class VadInitialPromptMode(Enum):
+    PREPEND_ALL_SEGMENTS = 1
+    PREPREND_FIRST_SEGMENT = 2
+
+    @staticmethod
+    def from_string(s: str):
+        normalized = s.lower() if s is not None else None
+
+        if normalized == "prepend_all_segments":
+            return VadInitialPromptMode.PREPEND_ALL_SEGMENTS
+        elif normalized == "prepend_first_segment":
+            return VadInitialPromptMode.PREPREND_FIRST_SEGMENT
+        else:
+            raise ValueError(f"Invalid value for VadInitialPromptMode: {s}")
+
 class ApplicationConfig:
     def __init__(self, models: List[ModelConfig] = [], input_audio_max_duration: int = 600, 
                  share: bool = False, server_name: str = None, server_port: int = 7860, 
@@ -33,6 +49,7 @@ class ApplicationConfig:
                  auto_parallel: bool = False, output_dir: str = None,
                  model_dir: str = None, device: str = None, 
                  verbose: bool = True, task: str = "transcribe", language: str = None,
+                 vad_initial_prompt_mode: str = "prepend_first_segment ", 
                  vad_merge_window: float = 5, vad_max_merge_size: float = 30,
                  vad_padding: float = 1, vad_prompt_window: float = 3,
                  temperature: float = 0, best_of: int = 5, beam_size: int = 5,
@@ -67,6 +84,7 @@ class ApplicationConfig:
         self.verbose = verbose
         self.task = task
         self.language = language
+        self.vad_initial_prompt_mode = vad_initial_prompt_mode
         self.vad_merge_window = vad_merge_window
         self.vad_max_merge_size = vad_max_merge_size
         self.vad_padding = vad_padding

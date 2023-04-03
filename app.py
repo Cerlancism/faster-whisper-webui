@@ -12,7 +12,7 @@ import numpy as np
 
 import torch
 
-from src.config import ApplicationConfig
+from src.config import ApplicationConfig, VadInitialPromptMode
 from src.hooks.progressListener import ProgressListener
 from src.hooks.subTaskProgressListener import SubTaskProgressListener
 from src.hooks.whisperProgressHook import create_progress_listener_handle
@@ -42,6 +42,17 @@ MAX_FILE_PREFIX_LENGTH = 17
 MAX_AUTO_CPU_CORES = 8
 
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large", "large-v1", "large-v2"]
+
+class VadOptions:
+    def __init__(self, vad: str = None, vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, 
+                                        vadInitialPromptMode: Union[VadInitialPromptMode, str] = VadInitialPromptMode.PREPREND_FIRST_SEGMENT):
+        self.vad = vad
+        self.vadMergeWindow = vadMergeWindow
+        self.vadMaxMergeSize = vadMaxMergeSize
+        self.vadPadding = vadPadding
+        self.vadPromptWindow = vadPromptWindow
+        self.vadInitialPromptMode = vadInitialPromptMode if isinstance(vadInitialPromptMode, VadInitialPromptMode) \
+                                        else VadInitialPromptMode.from_string(vadInitialPromptMode)
 
 class WhisperTranscriber:
     def __init__(self, input_audio_max_duration: float = None, vad_process_timeout: float = None, 
@@ -75,11 +86,14 @@ class WhisperTranscriber:
     # Entry function for the simple tab
     def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
                                 progress=gr.Progress()):
-        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
-                                     progress=progress)
+        
+        vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, self.app_config.vad_initial_prompt_mode)
+
+        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions, progress=progress)
 
     # Entry function for the full tab
-    def transcribe_webui_full(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
+    def transcribe_webui_full(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
+                                    vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode, 
                                     initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
                                     condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
                                     compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float, 
@@ -91,14 +105,16 @@ class WhisperTranscriber:
         else:
             temperature = [temperature]
 
-        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
+        vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode)
+
+        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions,
                                      initial_prompt=initial_prompt, temperature=temperature, best_of=best_of, beam_size=beam_size, patience=patience, length_penalty=length_penalty, suppress_tokens=suppress_tokens,
                                      condition_on_previous_text=condition_on_previous_text, fp16=fp16,
                                      compression_ratio_threshold=compression_ratio_threshold, logprob_threshold=logprob_threshold, no_speech_threshold=no_speech_threshold, 
                                      progress=progress)
 
-    def transcribe_webui(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
-                         progress: gr.Progress = None, **decodeOptions: dict):
+    def transcribe_webui(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
+                         vadOptions: VadOptions, progress: gr.Progress = None, **decodeOptions: dict):
         try:
             sources = self.__get_source(urlData, multipleFiles, microphoneData)
             
@@ -146,7 +162,7 @@ class WhisperTranscriber:
                                                    sub_task_total=source_audio_duration)
 
                     # Transcribe
-                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, scaled_progress_listener, **decodeOptions)
+                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vadOptions, scaled_progress_listener, **decodeOptions)
                     filePrefix = slugify(source_prefix + source.get_short_name(), allow_unicode=True)
 
                     # Update progress
@@ -210,8 +226,8 @@ class WhisperTranscriber:
         except ExceededMaximumDuration as e:
             return [], ("[ERROR]: Maximum remote video length is " + str(e.maxDuration) + "s, file was " + str(e.videoDuration) + "s"), "[ERROR]"
 
-    def transcribe_file(self, model: AbstractWhisperContainer, audio_path: str, language: str, task: str = None, vad: str = None, 
-                        vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1, 
+    def transcribe_file(self, model: AbstractWhisperContainer, audio_path: str, language: str, task: str = None, 
+                        vadOptions: VadOptions = VadOptions(), 
                         progressListener: ProgressListener = None, **decodeOptions: dict):
         
         initial_prompt = decodeOptions.pop('initial_prompt', None)
@@ -224,26 +240,26 @@ class WhisperTranscriber:
             task = decodeOptions.pop('task')
 
         # Callable for processing an audio file
-        whisperCallable = model.create_callback(language, task, initial_prompt, **decodeOptions)
+        whisperCallable = model.create_callback(language, task, initial_prompt, initial_prompt_mode=vadOptions.vadInitialPromptMode, **decodeOptions)
 
         # The results
-        if (vad == 'silero-vad'):
+        if (vadOptions.vad == 'silero-vad'):
             # Silero VAD where non-speech gaps are transcribed
-            process_gaps = self._create_silero_config(NonSpeechStrategy.CREATE_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+            process_gaps = self._create_silero_config(NonSpeechStrategy.CREATE_SEGMENT, vadOptions)
             result = self.process_vad(audio_path, whisperCallable, self.vad_model, process_gaps, progressListener=progressListener)
-        elif (vad == 'silero-vad-skip-gaps'):
+        elif (vadOptions.vad == 'silero-vad-skip-gaps'):
             # Silero VAD where non-speech gaps are simply ignored
-            skip_gaps = self._create_silero_config(NonSpeechStrategy.SKIP, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+            skip_gaps = self._create_silero_config(NonSpeechStrategy.SKIP, vadOptions)
             result = self.process_vad(audio_path, whisperCallable, self.vad_model, skip_gaps, progressListener=progressListener)
-        elif (vad == 'silero-vad-expand-into-gaps'):
+        elif (vadOptions.vad == 'silero-vad-expand-into-gaps'):
             # Use Silero VAD where speech-segments are expanded into non-speech gaps
-            expand_gaps = self._create_silero_config(NonSpeechStrategy.EXPAND_SEGMENT, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+            expand_gaps = self._create_silero_config(NonSpeechStrategy.EXPAND_SEGMENT, vadOptions)
             result = self.process_vad(audio_path, whisperCallable, self.vad_model, expand_gaps, progressListener=progressListener)
-        elif (vad == 'periodic-vad'):
+        elif (vadOptions.vad == 'periodic-vad'):
             # Very simple VAD - mark every 5 minutes as speech. This makes it less likely that Whisper enters an infinite loop, but
             # it may create a break in the middle of a sentence, causing some artifacts.
             periodic_vad = VadPeriodicTranscription()
-            period_config = PeriodicTranscriptionConfig(periodic_duration=vadMaxMergeSize, max_prompt_window=vadPromptWindow)
+            period_config = PeriodicTranscriptionConfig(periodic_duration=vadOptions.vadMaxMergeSize, max_prompt_window=vadOptions.vadPromptWindow)
             result = self.process_vad(audio_path, whisperCallable, periodic_vad, period_config, progressListener=progressListener)
 
         else:
@@ -314,15 +330,15 @@ class WhisperTranscriber:
         else:
             return prompt1 + " " + prompt2
 
-    def _create_silero_config(self, non_speech_strategy: NonSpeechStrategy, vadMergeWindow: float = 5, vadMaxMergeSize: float = 150, vadPadding: float = 1, vadPromptWindow: float = 1):
+    def _create_silero_config(self, non_speech_strategy: NonSpeechStrategy, vadOptions: VadOptions):
         # Use Silero VAD 
         if (self.vad_model is None):
             self.vad_model = VadSileroTranscription()
 
         config = TranscriptionConfig(non_speech_strategy = non_speech_strategy, 
-                max_silent_period=vadMergeWindow, max_merge_size=vadMaxMergeSize, 
-                segment_padding_left=vadPadding, segment_padding_right=vadPadding, 
-                max_prompt_window=vadPromptWindow)
+                max_silent_period=vadOptions.vadMergeWindow, max_merge_size=vadOptions.vadMaxMergeSize, 
+                segment_padding_left=vadOptions.vadPadding, segment_padding_right=vadOptions.vadPadding, 
+                max_prompt_window=vadOptions.vadPromptWindow)
 
         return config
 
@@ -451,6 +467,7 @@ def create_ui(app_config: ApplicationConfig):
 
     full_transcribe = gr.Interface(fn=ui.transcribe_webui_full, description=full_description, article=ui_article, inputs=[
         *simple_inputs(),
+        gr.Dropdown(choices=["prepend_first_segment", "prepend_all_segments"], value=app_config.vad_initial_prompt_mode, label="VAD - Initial Prompt Mode"),
         gr.TextArea(label="Initial Prompt"),
         gr.Number(label="Temperature", value=app_config.temperature),
         gr.Number(label="Best Of - Non-zero temperature", value=app_config.best_of, precision=0),
@@ -503,6 +520,8 @@ if __name__ == '__main__':
                         help="The default model name.") # medium
     parser.add_argument("--default_vad", type=str, default=default_app_config.default_vad, \
                         help="The default VAD.") # silero-vad
+    parser.add_argument("--vad_initial_prompt_mode", type=str, default=default_app_config.vad_initial_prompt_mode, choices=["prepend_all_segments", "prepend_first_segment"], \
+                        help="Whether or not to prepend the initial prompt to each VAD segment (prepend_all_segments), or just the first segment (prepend_first_segment)") # prepend_first_segment
     parser.add_argument("--vad_parallel_devices", type=str, default=default_app_config.vad_parallel_devices, \
                         help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.") # ""
     parser.add_argument("--vad_cpu_cores", type=int, default=default_app_config.vad_cpu_cores, \
