@@ -1,6 +1,6 @@
 import abc
 from typing import List
-from src.config import ModelConfig
+from src.config import ModelConfig, VadInitialPromptMode
 
 from src.hooks.progressListener import ProgressListener
 from src.modelCache import GLOBAL_MODEL_CACHE, ModelCache
@@ -23,6 +23,15 @@ class AbstractWhisperCallback:
             A callback to receive progress updates.
         """
         raise NotImplementedError()
+
+    def _get_initial_prompt(self, initial_prompt: str, initial_prompt_mode: VadInitialPromptMode, 
+                               prompt: str, segment_index: int):
+        if (initial_prompt_mode == VadInitialPromptMode.PREPEND_ALL_SEGMENTS):
+            return self._concat_prompt(initial_prompt, prompt)
+        elif (initial_prompt_mode == VadInitialPromptMode.PREPREND_FIRST_SEGMENT):
+            return self._concat_prompt(initial_prompt, prompt) if segment_index == 0 else prompt
+        else:
+            raise ValueError(f"Unknown initial prompt mode {initial_prompt_mode}")
 
     def _concat_prompt(self, prompt1, prompt2):
         if (prompt1 is None):
@@ -66,7 +75,9 @@ class AbstractWhisperContainer:
         pass
 
     @abc.abstractmethod
-    def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, **decodeOptions: dict) -> AbstractWhisperCallback:
+    def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, 
+                        initial_prompt_mode: VadInitialPromptMode = VadInitialPromptMode.PREPREND_FIRST_SEGMENT, 
+                        **decodeOptions: dict) -> AbstractWhisperCallback:
         """
         Create a WhisperCallback object that can be used to transcript audio files.
 
@@ -78,6 +89,9 @@ class AbstractWhisperContainer:
             The task - either translate or transcribe.
         initial_prompt: str
             The initial prompt to use for the transcription.
+        initial_prompt_mode: VadInitialPromptMode
+            The mode to use for the initial prompt. If set to PREPEND_FIRST_SEGMENT, the initial prompt will be prepended to the first segment of audio.
+            If set to PREPEND_ALL_SEGMENTS, the initial prompt will be prepended to all segments of audio.
         decodeOptions: dict
             Additional options to pass to the decoder. Must be pickleable.
 

@@ -97,6 +97,8 @@
     "vad_max_merge_size": 30,
     // The padding (in seconds) to add to each voice segment
     "vad_padding": 1,
+    // Whether or not to prepend the initial prompt to each VAD segment (prepend_all_segments), or just the first segment (prepend_first_segment)
+    "vad_initial_prompt_mode": "prepend_first_segment",
     // The window size of the prompt to pass to Whisper
     "vad_prompt_window": 3,
     // Temperature to use for sampling

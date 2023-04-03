@@ -2,7 +2,7 @@ import os
 from typing import List, Union
 
 from faster_whisper import WhisperModel, download_model
-from src.config import ModelConfig
+from src.config import ModelConfig, VadInitialPromptMode
 from src.hooks.progressListener import ProgressListener
 from src.languages import get_language_from_name
 from src.modelCache import ModelCache
@@ -51,7 +51,9 @@ class FasterWhisperContainer(AbstractWhisperContainer):
         model = WhisperModel(model_config.url, device=device, compute_type=self.compute_type)
         return model
 
-    def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, **decodeOptions: dict):
+    def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, 
+                        initial_prompt_mode: VadInitialPromptMode = VadInitialPromptMode.PREPREND_FIRST_SEGMENT, 
+                        **decodeOptions: dict) -> AbstractWhisperCallback:
         """
         Create a WhisperCallback object that can be used to transcript audio files.
 
@@ -63,6 +65,9 @@ class FasterWhisperContainer(AbstractWhisperContainer):
             The task - either translate or transcribe.
         initial_prompt: str
             The initial prompt to use for the transcription.
+        initial_prompt_mode: VadInitialPromptMode
+            The mode to use for the initial prompt. If set to PREPEND_FIRST_SEGMENT, the initial prompt will be prepended to the first segment of audio.
+            If set to PREPEND_ALL_SEGMENTS, the initial prompt will be prepended to all segments of audio.
         decodeOptions: dict
             Additional options to pass to the decoder. Must be pickleable.
 
@@ -70,14 +75,17 @@ class FasterWhisperContainer(AbstractWhisperContainer):
         -------
         A WhisperCallback object.
         """
-        return FasterWhisperCallback(self, language=language, task=task, initial_prompt=initial_prompt, **decodeOptions)
+        return FasterWhisperCallback(self, language=language, task=task, initial_prompt=initial_prompt, initial_prompt_mode=initial_prompt_mode, **decodeOptions)
 
 class FasterWhisperCallback(AbstractWhisperCallback):
-    def __init__(self, model_container: FasterWhisperContainer, language: str = None, task: str = None, initial_prompt: str = None, **decodeOptions: dict):
+    def __init__(self, model_container: FasterWhisperContainer, language: str = None, task: str = None, 
+                 initial_prompt: str = None, initial_prompt_mode: VadInitialPromptMode=VadInitialPromptMode.PREPREND_FIRST_SEGMENT, 
+                 **decodeOptions: dict):
         self.model_container = model_container
         self.language = language
         self.task = task
         self.initial_prompt = initial_prompt
+        self.initial_prompt_mode = initial_prompt_mode
         self.decodeOptions = decodeOptions
 
         self._printed_warning = False
@@ -125,9 +133,11 @@ class FasterWhisperCallback(AbstractWhisperCallback):
         # See if supress_tokens is a string - if so, convert it to a list of ints
         decodeOptions["suppress_tokens"] = self._split_suppress_tokens(suppress_tokens)
 
+        initial_prompt = self._get_initial_prompt(self.initial_prompt, self.initial_prompt_mode, prompt, segment_index)
+
         segments_generator, info = model.transcribe(audio, \
             language=language_code if language_code else detected_language, task=self.task, \
-            initial_prompt=self._concat_prompt(self.initial_prompt, prompt) if segment_index == 0 else prompt, \
+            initial_prompt=initial_prompt, \
             **decodeOptions
         )
 
