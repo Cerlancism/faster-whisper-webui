@@ -355,11 +355,11 @@ class WhisperTranscriber:
         print("Max line width " + str(languageMaxLineWidth))
         vtt = self.__get_subs(result["segments"], "vtt", languageMaxLineWidth)
         srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth)
-
         output_files = []
-        output_files.append(self.__create_file(srt, output_dir, source_name + extras + "_" + language + ".srt"));
-        # output_files.append(self.__create_file(vtt, output_dir, source_name + "-subs.vtt"));
-        # output_files.append(self.__create_file(text, output_dir, source_name + "-transcript.txt"));
+        output_name = source_name + extras + "_" + language 
+        output_files.append(self.__create_file(srt, output_dir, output_name + "-subs.srt"));
+        output_files.append(self.__create_file(vtt, output_dir, output_name + "-subs.vtt"));
+        output_files.append(self.__create_file(text, output_dir, output_name + "-transcript.txt"));
 
         return output_files, text, vtt
 
