@@ -7,7 +7,7 @@ def create_whisper_container(whisper_implementation: str,
                              model_name: str, device: str = None, compute_type: str = "float16",
                              download_root: str = None,
                              cache: modelCache = None, models: List[ModelConfig] = []) -> AbstractWhisperContainer:
-    print("Creating whisper container for " + whisper_implementation)
+    print("Creating whisper container for " + whisper_implementation + " model " + model_name)
 
     if (whisper_implementation == "whisper"):
         from src.whisper.whisperContainer import WhisperContainer

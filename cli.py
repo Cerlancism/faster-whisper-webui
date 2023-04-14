@@ -28,7 +28,7 @@ def cli():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("audio", nargs="+", type=str, \
                         help="audio file(s) to transcribe")
-    parser.add_argument("--model", default=app_config.default_model_name, choices=whisper_models, \
+    parser.add_argument("--model", nargs="+", default=app_config.default_model_name, choices=whisper_models, \
                         help="name of the Whisper model to use") # medium
     parser.add_argument("--model_dir", type=str, default=app_config.model_dir, \
                         help="the path to save model files; uses ~/.cache/whisper by default")
@@ -41,7 +41,7 @@ def cli():
     parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
                         help="the Whisper implementation to use")
                         
-    parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate", "both"], \
+    parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate", "parallel", "sequential"], \
                         help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
     parser.add_argument("--language", type=str, default=app_config.language, choices=sorted(get_language_names()), \
                         help="language spoken in the audio, specify None to perform language detection")
@@ -97,7 +97,7 @@ def cli():
                         help="if the probability of the <|nospeech|> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence")
 
     args = parser.parse_args().__dict__
-    model_name: str = args.pop("model")
+    model_names: str = args.pop("model")
     model_dir: str = args.pop("model_dir")
     output_dir: str = args.pop("output_dir")
     device: str = args.pop("device")
@@ -106,8 +106,8 @@ def cli():
     whisper_implementation = args.pop("whisper_implementation")
     print(f"Using {whisper_implementation} for Whisper")
 
-    if model_name.endswith(".en") and args["language"] not in {"en", "English"}:
-        warnings.warn(f"{model_name} is an English-only model but receipted '{args['language']}'; using English instead.")
+    if model_names[0].endswith(".en") and args["language"] not in {"en", "English"}:
+        warnings.warn(f"{model_names[0]} is an English-only model but receipted '{args['language']}'; using English instead.")
         args["language"] = "en"
 
     temperature = args.pop("temperature")
@@ -132,15 +132,15 @@ def cli():
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
     transcriber.set_auto_parallel(auto_parallel)
 
-    model = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
+    models = []
+
+    for model_name in model_names:
+        model = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
                                      device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)
+        models.append(model)    
 
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)
-
-    def run(theArgs):
-        result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **theArgs)
-        transcriber.write_result(result, source_name, output_dir, "_" + model_name + "_" + theArgs["task"])
 
     for audio_path in args.pop("audio"):
         sources = []
@@ -158,27 +158,33 @@ def cli():
             source_path = source["path"]
             source_name = source["name"]
 
-            vadOptions = VadOptions(vad, vad_merge_window, vad_max_merge_size, vad_padding, vad_prompt_window, 
-                                    VadInitialPromptMode.from_string(vad_initial_prompt_mode))
-            if args["task"] == "both":
-                transcribeArgs = dict(args)
-                translateArgs = dict(args)
-                transcribeArgs["task"] = "transcribe"
-                translateArgs["task"] = "translate"
-                run(transcribeArgs)
-                run(translateArgs)
-                # if auto_parallel:
-                #     t1 = threading.Thread(target=run, args=(transcribeArgs,))
-                #     t2 = threading.Thread(target=run, args=(translateArgs,))
-                #     t1.start()
-                #     t2.start()
-                #     t1.join()
-                #     t2.join()
-                # else:
-                #     run(transcribeArgs)
-                #     run(translateArgs)
-            else:
-                run(args)
+            for model in models:
+                def run(theArgs):
+                    result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **theArgs)
+                    transcriber.write_result(result, source_name, output_dir, "_" + model.model_name + "_" + theArgs["task"])
+
+                vadOptions = VadOptions(vad, vad_merge_window, vad_max_merge_size, vad_padding, vad_prompt_window, 
+                                        VadInitialPromptMode.from_string(vad_initial_prompt_mode))
+                if args["task"] == "parallel" or args["task"] == "sequential":
+                    mode = args["task"]
+                    transcribeArgs = dict(args)
+                    translateArgs = dict(args)
+                    transcribeArgs["task"] = "transcribe"
+                    translateArgs["task"] = "translate"
+                    # run(transcribeArgs)
+                    # run(translateArgs)
+                    if mode == "parallel":
+                        t1 = threading.Thread(target=run, args=(transcribeArgs,))
+                        t2 = threading.Thread(target=run, args=(translateArgs,))
+                        t1.start()
+                        t2.start()
+                        t1.join()
+                        t2.join()
+                    else:
+                        run(transcribeArgs)
+                        run(translateArgs)
+                else:
+                    run(args)
 
     transcriber.close()
 

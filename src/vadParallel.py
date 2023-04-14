@@ -14,6 +14,7 @@ from src.whisper.abstractWhisperContainer import AbstractWhisperCallback
 
 vadCache = {}
 vadCacheLock = threading.Lock()
+downloadLock = threading.Lock()
 
 class _ProgressListenerToQueue(ProgressListener):
     def __init__(self, progress_queue: Queue):
@@ -113,16 +114,27 @@ class ParallelTranscription(AbstractTranscription):
                             progress_listener: ProgressListener = None):
         total_duration = get_audio_duration(audio)
 
-        # First, get the timestamps for the original audio
-        if (cpu_device_count > 1 and not transcription.is_transcribe_timestamps_fast()):
-            merged = self._get_merged_timestamps_parallel(transcription, audio, config, total_duration, cpu_device_count, cpu_parallel_context)
+        vadCacheLock.acquire()
+        if audio in vadCache:
+            print("[ParallelTranscription] Using vad cache", audio)
+            merged = vadCache[audio]
+            vadCacheLock.release()
         else:
-            timestamp_segments = transcription.get_transcribe_timestamps(audio, config, 0, total_duration)
-            merged = transcription.get_merged_timestamps(timestamp_segments, config, total_duration)
+            # First, get the timestamps for the original audio
+            if (cpu_device_count > 1 and not transcription.is_transcribe_timestamps_fast()):
+                merged = self._get_merged_timestamps_parallel(transcription, audio, config, total_duration, cpu_device_count, cpu_parallel_context)
+            else:
+                timestamp_segments = transcription.get_transcribe_timestamps(audio, config, 0, total_duration)
+                merged = transcription.get_merged_timestamps(timestamp_segments, config, total_duration)
+            vadCache[audio] = merged
+            vadCacheLock.release()
+
 
         # We must make sure the whisper model is downloaded
         if (len(gpu_devices) > 1):
+            downloadLock.acquire()
             whisperCallable.model_container.ensure_downloaded()
+            downloadLock.release()
 
         # Split into a list for each device
         # TODO: Split by time instead of by number of chunks
@@ -213,12 +225,6 @@ class ParallelTranscription(AbstractTranscription):
 
     def _get_merged_timestamps_parallel(self, transcription: AbstractTranscription, audio: str, config: TranscriptionConfig, total_duration: float, 
                                        cpu_device_count: int, cpu_parallel_context: ParallelContext = None):
-        vadCacheLock.acquire()
-        if audio in vadCache:
-            print("[ParallelTranscription] Using vad cache", audio)
-            vadCacheLock.release()
-            return vadCache[audio]
-
         parameters = []
 
         chunk_size = max(total_duration / cpu_device_count, self.MIN_CPU_CHUNK_SIZE_SECONDS)
@@ -263,8 +269,6 @@ class ParallelTranscription(AbstractTranscription):
                 timestamps.extend(result)
 
             merged = transcription.get_merged_timestamps(timestamps, config, total_duration)
-            vadCache[audio] = merged
-            vadCacheLock.release()
 
             perf_end_time = time.perf_counter()
             print("Parallel VAD processing took {} seconds".format(perf_end_time - perf_start_time))
