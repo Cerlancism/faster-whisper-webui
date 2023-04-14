@@ -357,7 +357,7 @@ class WhisperTranscriber:
         srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth)
 
         output_files = []
-        output_files.append(self.__create_file(srt, output_dir, language + "_" + source_name + extras + ".srt"));
+        output_files.append(self.__create_file(srt, output_dir, source_name + extras + "_" + language + ".srt"));
         # output_files.append(self.__create_file(vtt, output_dir, source_name + "-subs.vtt"));
         # output_files.append(self.__create_file(text, output_dir, source_name + "-transcript.txt"));
 
