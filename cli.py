@@ -4,6 +4,7 @@ import pathlib
 from urllib.parse import urlparse
 import warnings
 import numpy as np
+import threading
 
 import torch
 from app import VadOptions, WhisperTranscriber
@@ -40,7 +41,7 @@ def cli():
     parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
                         help="the Whisper implementation to use")
                         
-    parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate"], \
+    parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate", "both"], \
                         help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
     parser.add_argument("--language", type=str, default=app_config.language, choices=sorted(get_language_names()), \
                         help="language spoken in the audio, specify None to perform language detection")
@@ -81,8 +82,8 @@ def cli():
                         help="optional text to provide as a prompt for the first window.")
     parser.add_argument("--condition_on_previous_text", type=str2bool, default=app_config.condition_on_previous_text, \
                         help="if True, provide the previous output of the model as a prompt for the next window; disabling may make the text inconsistent across windows, but the model becomes less prone to getting stuck in a failure loop")
-    parser.add_argument("--fp16", type=str2bool, default=app_config.fp16, \
-                        help="whether to perform inference in fp16; True by default")
+    # parser.add_argument("--fp16", type=str2bool, default=app_config.fp16, \
+    #                     help="whether to perform inference in fp16; True by default")
     parser.add_argument("--compute_type", type=str, default=app_config.compute_type, choices=["default", "auto", "int8", "int8_float16", "int16", "float16", "float32"], \
                         help="the compute type to use for inference")
 
@@ -137,6 +138,10 @@ def cli():
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)
 
+    def run(theArgs):
+        result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **theArgs)
+        transcriber.write_result(result, source_name, output_dir, "_" + model_name + "_" + theArgs["task"])
+
     for audio_path in args.pop("audio"):
         sources = []
 
@@ -155,12 +160,30 @@ def cli():
 
             vadOptions = VadOptions(vad, vad_merge_window, vad_max_merge_size, vad_padding, vad_prompt_window, 
                                     VadInitialPromptMode.from_string(vad_initial_prompt_mode))
-
-            result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **args)
-            
-            transcriber.write_result(result, source_name, output_dir)
+            if args["task"] == "both":
+                transcribeArgs = dict(args)
+                translateArgs = dict(args)
+                transcribeArgs["task"] = "transcribe"
+                translateArgs["task"] = "translate"
+                run(transcribeArgs)
+                run(translateArgs)
+                # if auto_parallel:
+                #     t1 = threading.Thread(target=run, args=(transcribeArgs,))
+                #     t2 = threading.Thread(target=run, args=(translateArgs,))
+                #     t1.start()
+                #     t2.start()
+                #     t1.join()
+                #     t2.join()
+                # else:
+                #     run(transcribeArgs)
+                #     run(translateArgs)
+            else:
+                run(args)
 
     transcriber.close()
+
+
+    
 
 def uri_validator(x):
     try:

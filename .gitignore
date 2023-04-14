@@ -4,3 +4,9 @@ __pycache__/
 flagged/
 *.py[cod]
 *$py.class
+
+Scripts/
+Lib/
+Include/
+share/
+pyvenv.cfg

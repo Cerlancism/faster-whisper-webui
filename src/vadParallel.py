@@ -12,6 +12,9 @@ import os
 
 from src.whisper.abstractWhisperContainer import AbstractWhisperCallback
 
+vadCache = {}
+vadCacheLock = threading.Lock()
+
 class _ProgressListenerToQueue(ProgressListener):
     def __init__(self, progress_queue: Queue):
         self.progress_queue = progress_queue
@@ -210,6 +213,12 @@ class ParallelTranscription(AbstractTranscription):
 
     def _get_merged_timestamps_parallel(self, transcription: AbstractTranscription, audio: str, config: TranscriptionConfig, total_duration: float, 
                                        cpu_device_count: int, cpu_parallel_context: ParallelContext = None):
+        vadCacheLock.acquire()
+        if audio in vadCache:
+            print("[ParallelTranscription] Using vad cache", audio)
+            vadCacheLock.release()
+            return vadCache[audio]
+
         parameters = []
 
         chunk_size = max(total_duration / cpu_device_count, self.MIN_CPU_CHUNK_SIZE_SECONDS)
@@ -254,6 +263,8 @@ class ParallelTranscription(AbstractTranscription):
                 timestamps.extend(result)
 
             merged = transcription.get_merged_timestamps(timestamps, config, total_duration)
+            vadCache[audio] = merged
+            vadCacheLock.release()
 
             perf_end_time = time.perf_counter()
             print("Parallel VAD processing took {} seconds".format(perf_end_time - perf_start_time))

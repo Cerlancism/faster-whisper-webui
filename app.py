@@ -239,6 +239,8 @@ class WhisperTranscriber:
         if ('task' in decodeOptions):
             task = decodeOptions.pop('task')
 
+        print("[WhisperTranscriber] Task", task)
+        print("[WhisperTranscriber] Model", model.model_name)
         # Callable for processing an audio file
         whisperCallable = model.create_callback(language, task, initial_prompt, initial_prompt_mode=vadOptions.vadInitialPromptMode, **decodeOptions)
 
@@ -342,7 +344,7 @@ class WhisperTranscriber:
 
         return config
 
-    def write_result(self, result: dict, source_name: str, output_dir: str):
+    def write_result(self, result: dict, source_name: str, output_dir: str, extras: str = ""):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
@@ -355,9 +357,9 @@ class WhisperTranscriber:
         srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth)
 
         output_files = []
-        output_files.append(self.__create_file(srt, output_dir, source_name + "-subs.srt"));
-        output_files.append(self.__create_file(vtt, output_dir, source_name + "-subs.vtt"));
-        output_files.append(self.__create_file(text, output_dir, source_name + "-transcript.txt"));
+        output_files.append(self.__create_file(srt, output_dir, language + "_" + source_name + extras + ".srt"));
+        # output_files.append(self.__create_file(vtt, output_dir, source_name + "-subs.vtt"));
+        # output_files.append(self.__create_file(text, output_dir, source_name + "-transcript.txt"));
 
         return output_files, text, vtt
 

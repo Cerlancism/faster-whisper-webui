@@ -28,6 +28,8 @@ import numpy as np
 from src.utils import format_timestamp
 from enum import Enum
 
+vadCache = {}
+
 class NonSpeechStrategy(Enum):
     """
     Ignore non-speech frames segments.
@@ -137,6 +139,21 @@ class AbstractTranscription(ABC):
             print("Transcribing non-speech:")
             pprint(merged)
         return merged
+    
+    def get_vad_segments(self, audio: str, config: TranscriptionConfig):
+            if audio in vadCache:
+                print("[AbstractTranscription] Using vad cache", audio)
+                return vadCache[audio]
+            max_audio_duration = self.get_audio_duration(audio, config)
+            timestamp_segments = self.get_transcribe_timestamps(audio, config, 0, max_audio_duration)
+
+            # Get speech timestamps from full audio file
+            merged = self.get_merged_timestamps(timestamp_segments, config, max_audio_duration)
+
+            print("Processing timestamps:")
+            pprint(merged)
+            vadCache[audio] = merged
+            return merged
 
     def transcribe(self, audio: str, whisperCallable: AbstractWhisperCallback, config: TranscriptionConfig, 
                    progressListener: ProgressListener = None):
@@ -156,31 +173,22 @@ class AbstractTranscription(ABC):
         """
 
         try:
-            max_audio_duration = self.get_audio_duration(audio, config)
-            timestamp_segments = self.get_transcribe_timestamps(audio, config, 0, max_audio_duration)
-
-            # Get speech timestamps from full audio file
-            merged = self.get_merged_timestamps(timestamp_segments, config, max_audio_duration)
-
+            merged = self.get_vad_segments(audio, config)
             # A deque of transcribed segments that is passed to the next segment as a prompt
             prompt_window = deque()
+            languageCounter = Counter()
+            detected_language = None
 
-            print("Processing timestamps:")
-            pprint(merged)
+            segment_index = config.initial_segment_index
+            # Calculate progress 
+            progress_start_offset = merged[0]['start'] if len(merged) > 0 else 0
+            progress_total_duration = sum([segment['end'] - segment['start'] for segment in merged])
 
             result = {
                 'text': "",
                 'segments': [],
                 'language': ""
             }
-            languageCounter = Counter()
-            detected_language = None
-
-            segment_index = config.initial_segment_index
-
-            # Calculate progress 
-            progress_start_offset = merged[0]['start'] if len(merged) > 0 else 0
-            progress_total_duration = sum([segment['end'] - segment['start'] for segment in merged])
 
             # For each time segment, run whisper
             for segment in merged:
