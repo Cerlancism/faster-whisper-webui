@@ -41,7 +41,7 @@ def cli():
     parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
                         help="the Whisper implementation to use")
                         
-    parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate", "parallel", "sequential"], \
+    parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate", "both"], \
                         help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
     parser.add_argument("--language", type=str, default=app_config.language, choices=sorted(get_language_names()), \
                         help="language spoken in the audio, specify None to perform language detection")
@@ -165,24 +165,13 @@ def cli():
 
                 vadOptions = VadOptions(vad, vad_merge_window, vad_max_merge_size, vad_padding, vad_prompt_window, 
                                         VadInitialPromptMode.from_string(vad_initial_prompt_mode))
-                if args["task"] == "parallel" or args["task"] == "sequential":
-                    mode = args["task"]
+                if args["task"] == "both":
                     transcribeArgs = dict(args)
                     translateArgs = dict(args)
                     transcribeArgs["task"] = "transcribe"
                     translateArgs["task"] = "translate"
-                    # run(transcribeArgs)
-                    # run(translateArgs)
-                    if mode == "parallel":
-                        t1 = threading.Thread(target=run, args=(transcribeArgs,))
-                        t2 = threading.Thread(target=run, args=(translateArgs,))
-                        t1.start()
-                        t2.start()
-                        t1.join()
-                        t2.join()
-                    else:
-                        run(transcribeArgs)
-                        run(translateArgs)
+                    run(transcribeArgs)
+                    run(translateArgs)
                 else:
                     run(args)
 
