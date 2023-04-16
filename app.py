@@ -84,7 +84,11 @@ class WhisperTranscriber:
             print("[Auto parallel] Using GPU devices " + str(self.parallel_device_list) + " and " + str(self.vad_cpu_cores) + " CPU cores for VAD/transcription.")
 
     # Entry function for the simple tab
-    def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
+    def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow):
+        return self.transcribe_webui_simple_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+    
+    # Entry function for the simple tab progress
+    def transcribe_webui_simple_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
                                 progress=gr.Progress()):
         
         vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, self.app_config.vad_initial_prompt_mode)
@@ -93,6 +97,19 @@ class WhisperTranscriber:
 
     # Entry function for the full tab
     def transcribe_webui_full(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
+                                vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode, 
+                                initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
+                                condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
+                                compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float):
+        
+        return self.transcribe_webui_full_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, 
+                                vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode,
+                                initial_prompt, temperature, best_of, beam_size, patience, length_penalty, suppress_tokens,
+                                condition_on_previous_text, fp16, temperature_increment_on_fallback,
+                                compression_ratio_threshold, logprob_threshold, no_speech_threshold)
+
+    # Entry function for the full tab with progress
+    def transcribe_webui_full_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                                     vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode, 
                                     initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
                                     condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
@@ -457,7 +474,10 @@ def create_ui(app_config: ApplicationConfig):
         gr.Number(label="VAD - Prompt Window (s)", precision=None, value=app_config.vad_prompt_window),
     ]
 
-    simple_transcribe = gr.Interface(fn=ui.transcribe_webui_simple, description=ui_description, article=ui_article, inputs=simple_inputs(), outputs=[
+    is_queue_mode = app_config.queue_concurrency_count is not None and app_config.queue_concurrency_count > 0    
+
+    simple_transcribe = gr.Interface(fn=ui.transcribe_webui_simple_progress if is_queue_mode else ui.transcribe_webui_simple, 
+                                     description=ui_description, article=ui_article, inputs=simple_inputs(), outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
         gr.Text(label="Segments")
@@ -465,7 +485,8 @@ def create_ui(app_config: ApplicationConfig):
 
     full_description = ui_description + "\n\n\n\n" + "Be careful when changing some of the options in the full interface - this can cause the model to crash."
 
-    full_transcribe = gr.Interface(fn=ui.transcribe_webui_full, description=full_description, article=ui_article, inputs=[
+    full_transcribe = gr.Interface(fn=ui.transcribe_webui_full_progress if is_queue_mode else ui.transcribe_webui_full,
+                                   description=full_description, article=ui_article, inputs=[
         *simple_inputs(),
         gr.Dropdown(choices=["prepend_first_segment", "prepend_all_segments"], value=app_config.vad_initial_prompt_mode, label="VAD - Initial Prompt Mode"),
         gr.TextArea(label="Initial Prompt"),
@@ -490,8 +511,11 @@ def create_ui(app_config: ApplicationConfig):
     demo = gr.TabbedInterface([simple_transcribe, full_transcribe], tab_names=["Simple", "Full"])
 
     # Queue up the demo
-    if app_config.queue_concurrency_count is not None and app_config.queue_concurrency_count > 0:
+    if is_queue_mode:
         demo.queue(concurrency_count=app_config.queue_concurrency_count)
+        print("Queue mode enabled (concurrency count: " + str(app_config.queue_concurrency_count) + ")")
+    else:
+        print("Queue mode disabled - progress bars will not be shown.")
    
     demo.launch(share=app_config.share, server_name=app_config.server_name, server_port=app_config.server_port)
     
