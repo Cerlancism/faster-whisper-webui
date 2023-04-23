@@ -57,19 +57,19 @@ When more than one file is processed, the UI will also generate a "All_Output" z
 You can choose between using `whisper` or `faster-whisper`. [Faster Whisper](https://github.com/guillaumekln/faster-whisper) as a drop-in replacement for the 
 default Whisper which achieves up to a 4x speedup and 2x reduction in memory usage. 
 
-You can install the requirements for a specific Whisper implementation in `requirements-fastWhisper.txt` 
+You can install the requirements for a specific Whisper implementation in `requirements-fasterWhisper.txt` 
 or `requirements-whisper.txt`:
 ```
-pip install -r requirements-fastWhisper.txt
+pip install -r requirements-fasterWhisper.txt
 ```
-And then run the App or the CLI with the `--whisper_implementation fast-whisper` flag:
+And then run the App or the CLI with the `--whisper_implementation faster-whisper` flag:
 ```
-python app.py --whisper_implementation fast-whisper --input_audio_max_duration -1 --server_name 127.0.0.1 --auto_parallel True
+python app.py --whisper_implementation faster-whisper --input_audio_max_duration -1 --server_name 127.0.0.1 --auto_parallel True
 ```
 You can also select the whisper implementation in `config.json5`:
 ```json5
 {
-    "whisper_implementation": "fast-whisper"
+    "whisper_implementation": "faster-whisper"
 }
 ```
 ### GPU Acceleration
