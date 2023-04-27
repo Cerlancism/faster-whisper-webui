@@ -105,16 +105,17 @@ def __subtitle_preprocessor_iterator(transcript: Iterator[dict], maxLineWidth: i
         words = segment.get('words', [])
 
         if len(words) == 0:
-            # Yield the segment as-is
+            # Yield the segment as-is or processed
             if maxLineWidth is None or maxLineWidth < 0:
                 yield segment
-
-            # Yield the segment with processed text
-            yield {
-                'start': segment['start'],
-                'end': segment['end'],
-                'text': process_text(segment['text'].strip(), maxLineWidth)
-            }
+            else:
+                yield {
+                    'start': segment['start'],
+                    'end': segment['end'],
+                    'text': process_text(segment['text'].strip(), maxLineWidth)
+                }
+            # We are done
+            continue
 
         subtitle_start = segment['start']
         subtitle_end = segment['end']
