@@ -84,44 +84,49 @@ class WhisperTranscriber:
             print("[Auto parallel] Using GPU devices " + str(self.parallel_device_list) + " and " + str(self.vad_cpu_cores) + " CPU cores for VAD/transcription.")
 
     # Entry function for the simple tab
-    def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow):
-        return self.transcribe_webui_simple_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow)
+    def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
+                                vad, vadMergeWindow, vadMaxMergeSize, 
+                                word_timestamps: bool = False, highlight_words: bool = False):
+        return self.transcribe_webui_simple_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, 
+                                                     vad, vadMergeWindow, vadMaxMergeSize, 
+                                                     word_timestamps, highlight_words)
     
     # Entry function for the simple tab progress
-    def transcribe_webui_simple_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, 
-                                progress=gr.Progress()):
+    def transcribe_webui_simple_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
+                                         vad, vadMergeWindow, vadMaxMergeSize, 
+                                         word_timestamps: bool = False, highlight_words: bool = False, 
+                                         progress=gr.Progress()):
         
-        vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, self.app_config.vad_initial_prompt_mode)
+        vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, self.app_config.vad_padding, self.app_config.vad_prompt_window, self.app_config.vad_initial_prompt_mode)
 
-        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions, progress=progress)
+        return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions, 
+                                     word_timestamps=word_timestamps, highlight_words=highlight_words, progress=progress)
 
     # Entry function for the full tab
     def transcribe_webui_full(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
-                                vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode, 
-                                initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
-                                condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
-                                compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float,
-                                # Word timestamps
-                                word_timestamps: bool, prepend_punctuations: str, 
-                                append_punctuations: str, highlight_words: bool = False):
+                              vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode, 
+                              # Word timestamps
+                              word_timestamps: bool, highlight_words: bool, prepend_punctuations: str, append_punctuations: str,
+                              initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
+                              condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
+                              compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float):
         
         return self.transcribe_webui_full_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                                 vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode,
+                                word_timestamps, highlight_words, prepend_punctuations, append_punctuations,
                                 initial_prompt, temperature, best_of, beam_size, patience, length_penalty, suppress_tokens,
                                 condition_on_previous_text, fp16, temperature_increment_on_fallback,
-                                compression_ratio_threshold, logprob_threshold, no_speech_threshold,
-                                word_timestamps, prepend_punctuations, append_punctuations, highlight_words)
+                                compression_ratio_threshold, logprob_threshold, no_speech_threshold)
 
     # Entry function for the full tab with progress
     def transcribe_webui_full_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
-                                    vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode, 
-                                    initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
-                                    condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
-                                    compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float, 
-                                    # Word timestamps
-                                    word_timestamps: bool, prepend_punctuations: str, 
-                                    append_punctuations: str, highlight_words: bool = False,
-                                    progress=gr.Progress()):
+                                        vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode,
+                                        # Word timestamps
+                                        word_timestamps: bool, highlight_words: bool, prepend_punctuations: str, append_punctuations: str,   
+                                        initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
+                                        condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
+                                        compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float, 
+                                        progress=gr.Progress()):
 
         # Handle temperature_increment_on_fallback
         if temperature_increment_on_fallback is not None:
@@ -469,24 +474,34 @@ def create_ui(app_config: ApplicationConfig):
 
     whisper_models = app_config.get_model_names()
 
-    simple_inputs = lambda : [
+    common_inputs = lambda : [
         gr.Dropdown(choices=whisper_models, value=app_config.default_model_name, label="Model"),
         gr.Dropdown(choices=sorted(get_language_names()), label="Language", value=app_config.language),
         gr.Text(label="URL (YouTube, etc.)"),
         gr.File(label="Upload Files", file_count="multiple"),
         gr.Audio(source="microphone", type="filepath", label="Microphone Input"),
         gr.Dropdown(choices=["transcribe", "translate"], label="Task", value=app_config.task),
+    ]
+
+    common_vad_inputs = lambda : [
         gr.Dropdown(choices=["none", "silero-vad", "silero-vad-skip-gaps", "silero-vad-expand-into-gaps", "periodic-vad"], value=app_config.default_vad, label="VAD"),
         gr.Number(label="VAD - Merge Window (s)", precision=0, value=app_config.vad_merge_window),
         gr.Number(label="VAD - Max Merge Size (s)", precision=0, value=app_config.vad_max_merge_size),
-        gr.Number(label="VAD - Padding (s)", precision=None, value=app_config.vad_padding),
-        gr.Number(label="VAD - Prompt Window (s)", precision=None, value=app_config.vad_prompt_window),
+    ]
+    
+    common_word_timestamps_inputs = lambda : [
+        gr.Checkbox(label="Word Timestamps", value=app_config.word_timestamps),
+        gr.Checkbox(label="Word Timestamps - Highlight Words", value=app_config.highlight_words),
     ]
 
     is_queue_mode = app_config.queue_concurrency_count is not None and app_config.queue_concurrency_count > 0    
 
     simple_transcribe = gr.Interface(fn=ui.transcribe_webui_simple_progress if is_queue_mode else ui.transcribe_webui_simple, 
-                                     description=ui_description, article=ui_article, inputs=simple_inputs(), outputs=[
+                                     description=ui_description, article=ui_article, inputs=[
+        *common_inputs(),
+        *common_vad_inputs(),
+        *common_word_timestamps_inputs(),
+    ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
         gr.Text(label="Segments")
@@ -496,8 +511,17 @@ def create_ui(app_config: ApplicationConfig):
 
     full_transcribe = gr.Interface(fn=ui.transcribe_webui_full_progress if is_queue_mode else ui.transcribe_webui_full,
                                    description=full_description, article=ui_article, inputs=[
-        *simple_inputs(),
+        *common_inputs(),
+
+        *common_vad_inputs(),
+        gr.Number(label="VAD - Padding (s)", precision=None, value=app_config.vad_padding),
+        gr.Number(label="VAD - Prompt Window (s)", precision=None, value=app_config.vad_prompt_window),
         gr.Dropdown(choices=["prepend_first_segment", "prepend_all_segments"], value=app_config.vad_initial_prompt_mode, label="VAD - Initial Prompt Mode"),
+        
+        *common_word_timestamps_inputs(),
+        gr.Text(label="Word Timestamps - Prepend Punctuations", value=app_config.prepend_punctuations),
+        gr.Text(label="Word Timestamps - Append Punctuations", value=app_config.append_punctuations),
+
         gr.TextArea(label="Initial Prompt"),
         gr.Number(label="Temperature", value=app_config.temperature),
         gr.Number(label="Best Of - Non-zero temperature", value=app_config.best_of, precision=0),
@@ -511,13 +535,6 @@ def create_ui(app_config: ApplicationConfig):
         gr.Number(label="Compression ratio threshold", value=app_config.compression_ratio_threshold),
         gr.Number(label="Logprob threshold", value=app_config.logprob_threshold),
         gr.Number(label="No speech threshold", value=app_config.no_speech_threshold),
-
-        # Word timestamps
-        gr.Checkbox(label="Word Timestamps", value=app_config.word_timestamps),
-        gr.Text(label="Word Timestamps - Prepend Punctuations", value=app_config.prepend_punctuations),
-        gr.Text(label="Word Timestamps - Append Punctuations", value=app_config.append_punctuations),
-        gr.Checkbox(label="Word Timestamps - Highlight Words", value=app_config.highlight_words),
-
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
