@@ -58,7 +58,11 @@ class ApplicationConfig:
                  condition_on_previous_text: bool = True, fp16: bool = True,
                  compute_type: str = "float16", 
                  temperature_increment_on_fallback: float = 0.2, compression_ratio_threshold: float = 2.4,
-                 logprob_threshold: float = -1.0, no_speech_threshold: float = 0.6):
+                 logprob_threshold: float = -1.0, no_speech_threshold: float = 0.6,
+                 # Word timestamp settings
+                 word_timestamps: bool = False, prepend_punctuations: str = "\"\'“¿([{-",
+                 append_punctuations: str = "\"\'.。,，!！?？:：”)]}、", 
+                 highlight_words: bool = False):
         
         self.models = models
         
@@ -103,6 +107,12 @@ class ApplicationConfig:
         self.compression_ratio_threshold = compression_ratio_threshold
         self.logprob_threshold = logprob_threshold
         self.no_speech_threshold = no_speech_threshold
+        
+        # Word timestamp settings
+        self.word_timestamps = word_timestamps
+        self.prepend_punctuations = prepend_punctuations
+        self.append_punctuations = append_punctuations
+        self.highlight_words = highlight_words
         
     def get_model_names(self):
         return [ x.name for x in self.models ]

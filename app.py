@@ -100,13 +100,17 @@ class WhisperTranscriber:
                                 vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode, 
                                 initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
                                 condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
-                                compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float):
+                                compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float,
+                                # Word timestamps
+                                word_timestamps: bool, prepend_punctuations: str, 
+                                append_punctuations: str, highlight_words: bool = False):
         
         return self.transcribe_webui_full_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                                 vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode,
                                 initial_prompt, temperature, best_of, beam_size, patience, length_penalty, suppress_tokens,
                                 condition_on_previous_text, fp16, temperature_increment_on_fallback,
-                                compression_ratio_threshold, logprob_threshold, no_speech_threshold)
+                                compression_ratio_threshold, logprob_threshold, no_speech_threshold,
+                                word_timestamps, prepend_punctuations, append_punctuations, highlight_words)
 
     # Entry function for the full tab with progress
     def transcribe_webui_full_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
@@ -114,6 +118,9 @@ class WhisperTranscriber:
                                     initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
                                     condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
                                     compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float, 
+                                    # Word timestamps
+                                    word_timestamps: bool, prepend_punctuations: str, 
+                                    append_punctuations: str, highlight_words: bool = False,
                                     progress=gr.Progress()):
 
         # Handle temperature_increment_on_fallback
@@ -128,13 +135,15 @@ class WhisperTranscriber:
                                      initial_prompt=initial_prompt, temperature=temperature, best_of=best_of, beam_size=beam_size, patience=patience, length_penalty=length_penalty, suppress_tokens=suppress_tokens,
                                      condition_on_previous_text=condition_on_previous_text, fp16=fp16,
                                      compression_ratio_threshold=compression_ratio_threshold, logprob_threshold=logprob_threshold, no_speech_threshold=no_speech_threshold, 
+                                     word_timestamps=word_timestamps, prepend_punctuations=prepend_punctuations, append_punctuations=append_punctuations, highlight_words=highlight_words,
                                      progress=progress)
 
     def transcribe_webui(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
-                         vadOptions: VadOptions, progress: gr.Progress = None, **decodeOptions: dict):
+                         vadOptions: VadOptions, progress: gr.Progress = None, highlight_words: bool = False, 
+                         **decodeOptions: dict):
         try:
             sources = self.__get_source(urlData, multipleFiles, microphoneData)
-            
+
             try:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
@@ -185,7 +194,7 @@ class WhisperTranscriber:
                     # Update progress
                     current_progress += source_audio_duration
 
-                    source_download, source_text, source_vtt = self.write_result(result, filePrefix, outputDirectory)
+                    source_download, source_text, source_vtt = self.write_result(result, filePrefix, outputDirectory, highlight_words)
 
                     if len(sources) > 1:
                         # Add new line separators
@@ -359,7 +368,7 @@ class WhisperTranscriber:
 
         return config
 
-    def write_result(self, result: dict, source_name: str, output_dir: str):
+    def write_result(self, result: dict, source_name: str, output_dir: str, highlight_words: bool = False):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
@@ -368,8 +377,8 @@ class WhisperTranscriber:
         languageMaxLineWidth = self.__get_max_line_width(language)
 
         print("Max line width " + str(languageMaxLineWidth))
-        vtt = self.__get_subs(result["segments"], "vtt", languageMaxLineWidth)
-        srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth)
+        vtt = self.__get_subs(result["segments"], "vtt", languageMaxLineWidth, highlight_words=highlight_words)
+        srt = self.__get_subs(result["segments"], "srt", languageMaxLineWidth, highlight_words=highlight_words)
 
         output_files = []
         output_files.append(self.__create_file(srt, output_dir, source_name + "-subs.srt"));
@@ -394,13 +403,13 @@ class WhisperTranscriber:
             # 80 latin characters should fit on a 1080p/720p screen
             return 80
 
-    def __get_subs(self, segments: Iterator[dict], format: str, maxLineWidth: int) -> str:
+    def __get_subs(self, segments: Iterator[dict], format: str, maxLineWidth: int, highlight_words: bool = False) -> str:
         segmentStream = StringIO()
 
         if format == 'vtt':
-            write_vtt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
+            write_vtt(segments, file=segmentStream, maxLineWidth=maxLineWidth, highlight_words=highlight_words)
         elif format == 'srt':
-            write_srt(segments, file=segmentStream, maxLineWidth=maxLineWidth)
+            write_srt(segments, file=segmentStream, maxLineWidth=maxLineWidth, highlight_words=highlight_words)
         else:
             raise Exception("Unknown format " + format)
 
@@ -501,7 +510,14 @@ def create_ui(app_config: ApplicationConfig):
         gr.Number(label="Temperature increment on fallback", value=app_config.temperature_increment_on_fallback),
         gr.Number(label="Compression ratio threshold", value=app_config.compression_ratio_threshold),
         gr.Number(label="Logprob threshold", value=app_config.logprob_threshold),
-        gr.Number(label="No speech threshold", value=app_config.no_speech_threshold)
+        gr.Number(label="No speech threshold", value=app_config.no_speech_threshold),
+
+        # Word timestamps
+        gr.Checkbox(label="Word Timestamps", value=app_config.word_timestamps),
+        gr.Text(label="Word Timestamps - Prepend Punctuations", value=app_config.prepend_punctuations),
+        gr.Text(label="Word Timestamps - Append Punctuations", value=app_config.append_punctuations),
+        gr.Checkbox(label="Word Timestamps - Highlight Words", value=app_config.highlight_words),
+
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
