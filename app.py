@@ -29,7 +29,7 @@ import ffmpeg
 import gradio as gr
 
 from src.download import ExceededMaximumDuration, download_url
-from src.utils import slugify, write_srt, write_vtt
+from src.utils import optional_int, slugify, write_srt, write_vtt
 from src.vad import AbstractTranscription, NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
 from src.whisper.abstractWhisperContainer import AbstractWhisperContainer
 from src.whisper.whisperFactory import create_whisper_container
@@ -596,9 +596,14 @@ if __name__ == '__main__':
                         help="the Whisper implementation to use")
     parser.add_argument("--compute_type", type=str, default=default_app_config.compute_type, choices=["default", "auto", "int8", "int8_float16", "int16", "float16", "float32"], \
                         help="the compute type to use for inference")
+    parser.add_argument("--threads", type=optional_int, default=0, 
+                        help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
 
     args = parser.parse_args().__dict__
 
     updated_config = default_app_config.update(**args)
+
+    if (threads := args.pop("threads")) > 0:
+        torch.set_num_threads(threads)
 
     create_ui(app_config=updated_config)

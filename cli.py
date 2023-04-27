@@ -113,6 +113,9 @@ def cli():
     device: str = args.pop("device")
     os.makedirs(output_dir, exist_ok=True)
 
+    if (threads := args.pop("threads")) > 0:
+        torch.set_num_threads(threads)
+
     whisper_implementation = args.pop("whisper_implementation")
     print(f"Using {whisper_implementation} for Whisper")
 
