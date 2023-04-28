@@ -137,7 +137,7 @@ class ApplicationConfig:
     def parse_file(config_path: str):
         import json5
 
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             # Load using json5
             data = json5.load(f)
             data_models = data.pop("models", [])
