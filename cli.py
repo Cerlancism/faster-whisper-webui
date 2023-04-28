@@ -95,12 +95,26 @@ def cli():
     parser.add_argument("--no_speech_threshold", type=optional_float, default=app_config.no_speech_threshold, \
                         help="if the probability of the <|nospeech|> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence")
 
+    parser.add_argument("--word_timestamps", type=str2bool, default=app_config.word_timestamps, 
+                        help="(experimental) extract word-level timestamps and refine the results based on them")
+    parser.add_argument("--prepend_punctuations", type=str, default=app_config.prepend_punctuations, 
+                        help="if word_timestamps is True, merge these punctuation symbols with the next word")
+    parser.add_argument("--append_punctuations", type=str, default=app_config.append_punctuations, 
+                        help="if word_timestamps is True, merge these punctuation symbols with the previous word")
+    parser.add_argument("--highlight_words", type=str2bool, default=app_config.highlight_words,
+                        help="(requires --word_timestamps True) underline each word as it is spoken in srt and vtt")
+    parser.add_argument("--threads", type=optional_int, default=0, 
+                        help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
+
     args = parser.parse_args().__dict__
     model_name: str = args.pop("model")
     model_dir: str = args.pop("model_dir")
     output_dir: str = args.pop("output_dir")
     device: str = args.pop("device")
     os.makedirs(output_dir, exist_ok=True)
+
+    if (threads := args.pop("threads")) > 0:
+        torch.set_num_threads(threads)
 
     whisper_implementation = args.pop("whisper_implementation")
     print(f"Using {whisper_implementation} for Whisper")
@@ -126,6 +140,7 @@ def cli():
     auto_parallel = args.pop("auto_parallel")
     
     compute_type = args.pop("compute_type")
+    highlight_words = args.pop("highlight_words")
 
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores, app_config=app_config)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
@@ -133,7 +148,7 @@ def cli():
 
     model = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
                                      device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)
-
+    
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)
 
@@ -158,7 +173,7 @@ def cli():
 
             result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **args)
             
-            transcriber.write_result(result, source_name, output_dir)
+            transcriber.write_result(result, source_name, output_dir, highlight_words)
 
     transcriber.close()
 

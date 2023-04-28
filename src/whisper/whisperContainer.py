@@ -203,8 +203,9 @@ class WhisperCallback(AbstractWhisperCallback):
 
         initial_prompt = self._get_initial_prompt(self.initial_prompt, self.initial_prompt_mode, prompt, segment_index)
 
-        return model.transcribe(audio, \
+        result = model.transcribe(audio, \
             language=self.language if self.language else detected_language, task=self.task, \
             initial_prompt=initial_prompt, \
             **decodeOptions
         )
+        return result
