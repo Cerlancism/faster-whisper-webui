@@ -1,4 +1,5 @@
 import json
+from typing import Dict
 from src.prompts.abstractPromptStrategy import AbstractPromptStrategy
 
 
@@ -25,7 +26,7 @@ class JsonPromptStrategy(AbstractPromptStrategy):
                     
         """
         parsed_json = json.loads(initial_json_prompt)
-        self.segment_lookup = dict[str, JsonPromptSegment]()
+        self.segment_lookup: Dict[str, JsonPromptSegment] = dict() 
         
         for prompt_entry in parsed_json:
             segment_index = prompt_entry["segment_index"]

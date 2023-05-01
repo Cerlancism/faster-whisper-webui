@@ -273,15 +273,21 @@ class WhisperTranscriber:
         if ('task' in decodeOptions):
             task = decodeOptions.pop('task')
 
-        if (vadOptions.vadInitialPromptMode == VadInitialPromptMode.PREPEND_ALL_SEGMENTS or 
-            vadOptions.vadInitialPromptMode == VadInitialPromptMode.PREPREND_FIRST_SEGMENT):
+        initial_prompt_mode = vadOptions.vadInitialPromptMode
+
+        # Set default initial prompt mode
+        if (initial_prompt_mode is None):
+            initial_prompt_mode = VadInitialPromptMode.PREPREND_FIRST_SEGMENT
+
+        if (initial_prompt_mode == VadInitialPromptMode.PREPEND_ALL_SEGMENTS or 
+            initial_prompt_mode == VadInitialPromptMode.PREPREND_FIRST_SEGMENT):
             # Prepend initial prompt
-            prompt_strategy = PrependPromptStrategy(initial_prompt, vadOptions.vadInitialPromptMode)
+            prompt_strategy = PrependPromptStrategy(initial_prompt, initial_prompt_mode)
         elif (vadOptions.vadInitialPromptMode == VadInitialPromptMode.JSON_PROMPT_MODE):
             # Use a JSON format to specify the prompt for each segment
             prompt_strategy = JsonPromptStrategy(initial_prompt)
         else:
-            raise ValueError("Invalid vadInitialPromptMode: " + vadOptions.vadInitialPromptMode)
+            raise ValueError("Invalid vadInitialPromptMode: " + initial_prompt_mode)
 
         # Callable for processing an audio file
         whisperCallable = model.create_callback(language, task, prompt_strategy=prompt_strategy, **decodeOptions)
