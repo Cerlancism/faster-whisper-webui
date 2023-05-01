@@ -24,9 +24,12 @@ class ModelConfig:
         self.path = path
         self.type = type
 
+VAD_INITIAL_PROMPT_MODE_VALUES=["prepend_all_segments", "prepend_first_segment", "json_prompt_mode"]
+
 class VadInitialPromptMode(Enum):
     PREPEND_ALL_SEGMENTS = 1
     PREPREND_FIRST_SEGMENT = 2
+    JSON_PROMPT_MODE = 3
 
     @staticmethod
     def from_string(s: str):
@@ -36,6 +39,8 @@ class VadInitialPromptMode(Enum):
             return VadInitialPromptMode.PREPEND_ALL_SEGMENTS
         elif normalized == "prepend_first_segment":
             return VadInitialPromptMode.PREPREND_FIRST_SEGMENT
+        elif normalized == "json_prompt_mode":
+            return VadInitialPromptMode.JSON_PROMPT_MODE
         else:
             raise ValueError(f"Invalid value for VadInitialPromptMode: {s}")
 

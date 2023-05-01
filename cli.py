@@ -7,7 +7,7 @@ import numpy as np
 
 import torch
 from app import VadOptions, WhisperTranscriber
-from src.config import ApplicationConfig, VadInitialPromptMode
+from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
 from src.download import download_url
 from src.languages import get_language_names
 
@@ -47,7 +47,7 @@ def cli():
 
     parser.add_argument("--vad", type=str, default=app_config.default_vad, choices=["none", "silero-vad", "silero-vad-skip-gaps", "silero-vad-expand-into-gaps", "periodic-vad"], \
                         help="The voice activity detection algorithm to use") # silero-vad
-    parser.add_argument("--vad_initial_prompt_mode", type=str, default=app_config.vad_initial_prompt_mode, choices=["prepend_all_segments", "prepend_first_segment"], \
+    parser.add_argument("--vad_initial_prompt_mode", type=str, default=app_config.vad_initial_prompt_mode, choices=VAD_INITIAL_PROMPT_MODE_VALUES, \
                         help="Whether or not to prepend the initial prompt to each VAD segment (prepend_all_segments), or just the first segment (prepend_first_segment)") # prepend_first_segment
     parser.add_argument("--vad_merge_window", type=optional_float, default=app_config.vad_merge_window, \
                         help="The window size (in seconds) to merge voice segments")

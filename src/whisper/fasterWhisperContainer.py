@@ -6,6 +6,7 @@ from src.config import ModelConfig, VadInitialPromptMode
 from src.hooks.progressListener import ProgressListener
 from src.languages import get_language_from_name
 from src.modelCache import ModelCache
+from src.prompts.abstractPromptStrategy import AbstractPromptStrategy
 from src.whisper.abstractWhisperContainer import AbstractWhisperCallback, AbstractWhisperContainer
 from src.utils import format_timestamp
 
@@ -56,8 +57,8 @@ class FasterWhisperContainer(AbstractWhisperContainer):
         model = WhisperModel(model_url, device=device, compute_type=self.compute_type)
         return model
 
-    def create_callback(self, language: str = None, task: str = None, initial_prompt: str = None, 
-                        initial_prompt_mode: VadInitialPromptMode = VadInitialPromptMode.PREPREND_FIRST_SEGMENT, 
+    def create_callback(self, language: str = None, task: str = None, 
+                        prompt_strategy: AbstractPromptStrategy = None, 
                         **decodeOptions: dict) -> AbstractWhisperCallback:
         """
         Create a WhisperCallback object that can be used to transcript audio files.
@@ -68,11 +69,8 @@ class FasterWhisperContainer(AbstractWhisperContainer):
             The target language of the transcription. If not specified, the language will be inferred from the audio content.
         task: str
             The task - either translate or transcribe.
-        initial_prompt: str
-            The initial prompt to use for the transcription.
-        initial_prompt_mode: VadInitialPromptMode
-            The mode to use for the initial prompt. If set to PREPEND_FIRST_SEGMENT, the initial prompt will be prepended to the first segment of audio.
-            If set to PREPEND_ALL_SEGMENTS, the initial prompt will be prepended to all segments of audio.
+        prompt_strategy: AbstractPromptStrategy
+            The prompt strategy to use. If not specified, the prompt from Whisper will be used.
         decodeOptions: dict
             Additional options to pass to the decoder. Must be pickleable.
 
@@ -80,17 +78,16 @@ class FasterWhisperContainer(AbstractWhisperContainer):
         -------
         A WhisperCallback object.
         """
-        return FasterWhisperCallback(self, language=language, task=task, initial_prompt=initial_prompt, initial_prompt_mode=initial_prompt_mode, **decodeOptions)
+        return FasterWhisperCallback(self, language=language, task=task, prompt_strategy=prompt_strategy, **decodeOptions)
 
 class FasterWhisperCallback(AbstractWhisperCallback):
     def __init__(self, model_container: FasterWhisperContainer, language: str = None, task: str = None, 
-                 initial_prompt: str = None, initial_prompt_mode: VadInitialPromptMode=VadInitialPromptMode.PREPREND_FIRST_SEGMENT, 
+                 prompt_strategy: AbstractPromptStrategy = None, 
                  **decodeOptions: dict):
         self.model_container = model_container
         self.language = language
         self.task = task
-        self.initial_prompt = initial_prompt
-        self.initial_prompt_mode = initial_prompt_mode
+        self.prompt_strategy = prompt_strategy
         self.decodeOptions = decodeOptions
 
         self._printed_warning = False
@@ -138,7 +135,8 @@ class FasterWhisperCallback(AbstractWhisperCallback):
         # See if supress_tokens is a string - if so, convert it to a list of ints
         decodeOptions["suppress_tokens"] = self._split_suppress_tokens(suppress_tokens)
 
-        initial_prompt = self._get_initial_prompt(self.initial_prompt, self.initial_prompt_mode, prompt, segment_index)
+        initial_prompt = self.prompt_strategy.get_segment_prompt(segment_index, prompt, detected_language) \
+                           if self.prompt_strategy else prompt
 
         segments_generator, info = model.transcribe(audio, \
             language=language_code if language_code else detected_language, task=self.task, \
@@ -183,6 +181,10 @@ class FasterWhisperCallback(AbstractWhisperCallback):
             "language_probability": info.language_probability if info else None,
             "duration": info.duration if info else None
         }
+
+        # If we have a prompt strategy, we need to increment the current prompt
+        if self.prompt_strategy:
+            self.prompt_strategy.on_segment_finished(segment_index, prompt, detected_language, result)
 
         if progress_listener is not None:
             progress_listener.on_finished()

@@ -13,12 +13,14 @@ import numpy as np
 
 import torch
 
-from src.config import ApplicationConfig, VadInitialPromptMode
+from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
 from src.hooks.progressListener import ProgressListener
 from src.hooks.subTaskProgressListener import SubTaskProgressListener
 from src.hooks.whisperProgressHook import create_progress_listener_handle
 from src.languages import get_language_names
 from src.modelCache import ModelCache
+from src.prompts.jsonPromptStrategy import JsonPromptStrategy
+from src.prompts.prependPromptStrategy import PrependPromptStrategy
 from src.source import get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
 
@@ -271,8 +273,18 @@ class WhisperTranscriber:
         if ('task' in decodeOptions):
             task = decodeOptions.pop('task')
 
+        if (vadOptions.vadInitialPromptMode == VadInitialPromptMode.PREPEND_ALL_SEGMENTS or 
+            vadOptions.vadInitialPromptMode == VadInitialPromptMode.PREPREND_FIRST_SEGMENT):
+            # Prepend initial prompt
+            prompt_strategy = PrependPromptStrategy(initial_prompt, vadOptions.vadInitialPromptMode)
+        elif (vadOptions.vadInitialPromptMode == VadInitialPromptMode.JSON_PROMPT_MODE):
+            # Use a JSON format to specify the prompt for each segment
+            prompt_strategy = JsonPromptStrategy(initial_prompt)
+        else:
+            raise ValueError("Invalid vadInitialPromptMode: " + vadOptions.vadInitialPromptMode)
+
         # Callable for processing an audio file
-        whisperCallable = model.create_callback(language, task, initial_prompt, initial_prompt_mode=vadOptions.vadInitialPromptMode, **decodeOptions)
+        whisperCallable = model.create_callback(language, task, prompt_strategy=prompt_strategy, **decodeOptions)
 
         # The results
         if (vadOptions.vad == 'silero-vad'):
@@ -519,7 +531,7 @@ def create_ui(app_config: ApplicationConfig):
         *common_vad_inputs(),
         gr.Number(label="VAD - Padding (s)", precision=None, value=app_config.vad_padding),
         gr.Number(label="VAD - Prompt Window (s)", precision=None, value=app_config.vad_prompt_window),
-        gr.Dropdown(choices=["prepend_first_segment", "prepend_all_segments"], value=app_config.vad_initial_prompt_mode, label="VAD - Initial Prompt Mode"),
+        gr.Dropdown(choices=VAD_INITIAL_PROMPT_MODE_VALUES, label="VAD - Initial Prompt Mode"),
         
         *common_word_timestamps_inputs(),
         gr.Text(label="Word Timestamps - Prepend Punctuations", value=app_config.prepend_punctuations),
@@ -580,7 +592,7 @@ if __name__ == '__main__':
                         help="The default model name.") # medium
     parser.add_argument("--default_vad", type=str, default=default_app_config.default_vad, \
                         help="The default VAD.") # silero-vad
-    parser.add_argument("--vad_initial_prompt_mode", type=str, default=default_app_config.vad_initial_prompt_mode, choices=["prepend_all_segments", "prepend_first_segment"], \
+    parser.add_argument("--vad_initial_prompt_mode", type=str, default=default_app_config.vad_initial_prompt_mode, choices=VAD_INITIAL_PROMPT_MODE_VALUES, \
                         help="Whether or not to prepend the initial prompt to each VAD segment (prepend_all_segments), or just the first segment (prepend_first_segment)") # prepend_first_segment
     parser.add_argument("--vad_parallel_devices", type=str, default=default_app_config.vad_parallel_devices, \
                         help="A commma delimited list of CUDA devices to use for parallel processing. If None, disable parallel processing.") # ""
