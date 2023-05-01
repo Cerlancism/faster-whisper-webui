@@ -41,8 +41,10 @@ class VadInitialPromptMode(Enum):
             return VadInitialPromptMode.PREPREND_FIRST_SEGMENT
         elif normalized == "json_prompt_mode":
             return VadInitialPromptMode.JSON_PROMPT_MODE
-        else:
+        elif normalized is not None and normalized != "":
             raise ValueError(f"Invalid value for VadInitialPromptMode: {s}")
+        else:
+            return None
 
 class ApplicationConfig:
     def __init__(self, models: List[ModelConfig] = [], input_audio_max_duration: int = 600, 
