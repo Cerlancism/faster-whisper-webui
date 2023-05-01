@@ -41,7 +41,7 @@ def cli():
     parser.add_argument("--whisper_implementation", type=str, default=default_whisper_implementation, choices=["whisper", "faster-whisper"],\
                         help="the Whisper implementation to use")
                         
-    parser.add_argument("--task", type=str, default=app_config.task, choices=["transcribe", "translate", "both"], \
+    parser.add_argument("--task", nargs="+", type=str, default=app_config.task, choices=["transcribe", "translate", "both"], \
                         help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
     parser.add_argument("--language", type=str, default=app_config.language, choices=sorted(get_language_names()), \
                         help="language spoken in the audio, specify None to perform language detection")
@@ -127,17 +127,37 @@ def cli():
     auto_parallel = args.pop("auto_parallel")
     
     compute_type = args.pop("compute_type")
+        
+    tasks = args.pop("task")
+
+    if "both" in tasks:
+        if len(tasks) > 1:
+            print("both is not support on nargs, assuming only both")
+            tasks = ["both"]
+
+    model_task_list = []
+
+    if len(model_names) == len(tasks):
+        for model_name, task in zip(model_names, tasks):
+            model_task_list.append({"model": model_name, "task": task})
+    elif tasks[0] == "both":
+        for model_name in model_names:
+            model_task_list.append({"model": model_name, "task": "transcribe"})
+            model_task_list.append({"model": model_name, "task": "translate"})
+    else:
+        print("bad model task combination")
+        return
+    
+    model_cache = {}
+    for model_name in model_names:
+        if model_name in model_cache:
+            continue
+        model_cache[model_name] = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
+                                        device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)
 
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores, app_config=app_config)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
     transcriber.set_auto_parallel(auto_parallel)
-
-    models = []
-
-    for model_name in model_names:
-        model = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
-                                     device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)
-        models.append(model)    
 
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)
@@ -158,22 +178,14 @@ def cli():
             source_path = source["path"]
             source_name = source["name"]
 
-            for model in models:
-                def run(theArgs):
-                    result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **theArgs)
-                    transcriber.write_result(result, source_name, output_dir, "_" + model.model_name + "_" + theArgs["task"])
-
+            for model_task in model_task_list:
+                model = model_cache[model_task["model"]]
                 vadOptions = VadOptions(vad, vad_merge_window, vad_max_merge_size, vad_padding, vad_prompt_window, 
                                         VadInitialPromptMode.from_string(vad_initial_prompt_mode))
-                if args["task"] == "both":
-                    transcribeArgs = dict(args)
-                    translateArgs = dict(args)
-                    transcribeArgs["task"] = "transcribe"
-                    translateArgs["task"] = "translate"
-                    run(transcribeArgs)
-                    run(translateArgs)
-                else:
-                    run(args)
+                taskArgs = dict(args)
+                taskArgs["task"] = model_task["task"]
+                result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **taskArgs)
+                transcriber.write_result(result, source_name, output_dir, "_" + model.model_name + "_" + taskArgs["task"])
 
     transcriber.close()
 
