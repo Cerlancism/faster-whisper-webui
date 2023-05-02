@@ -146,18 +146,18 @@ def cli():
 
     if "both" in tasks:
         if len(tasks) > 1:
-            print("both is not support on nargs, assuming only both")
+            print("both is not supported with nargs, assuming only both")
             tasks = ["both"]
 
     model_task_list = []
 
-    if len(model_names) == len(tasks):
-        for model_name, task in zip(model_names, tasks):
-            model_task_list.append({"model": model_name, "task": task})
-    elif tasks[0] == "both":
+    if tasks[0] == "both":
         for model_name in model_names:
             model_task_list.append({"model": model_name, "task": "transcribe"})
             model_task_list.append({"model": model_name, "task": "translate"})
+    elif len(model_names) == len(tasks):
+        for model_name, task in zip(model_names, tasks):
+            model_task_list.append({"model": model_name, "task": task})
     else:
         print("bad model task combination")
         return
