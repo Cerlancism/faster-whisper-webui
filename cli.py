@@ -8,7 +8,7 @@ import threading
 
 import torch
 from app import VadOptions, WhisperTranscriber
-from src.config import ApplicationConfig, VadInitialPromptMode
+from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
 from src.download import download_url
 from src.languages import get_language_names
 
@@ -48,7 +48,7 @@ def cli():
 
     parser.add_argument("--vad", type=str, default=app_config.default_vad, choices=["none", "silero-vad", "silero-vad-skip-gaps", "silero-vad-expand-into-gaps", "periodic-vad"], \
                         help="The voice activity detection algorithm to use") # silero-vad
-    parser.add_argument("--vad_initial_prompt_mode", type=str, default=app_config.vad_initial_prompt_mode, choices=["prepend_all_segments", "prepend_first_segment"], \
+    parser.add_argument("--vad_initial_prompt_mode", type=str, default=app_config.vad_initial_prompt_mode, choices=VAD_INITIAL_PROMPT_MODE_VALUES, \
                         help="Whether or not to prepend the initial prompt to each VAD segment (prepend_all_segments), or just the first segment (prepend_first_segment)") # prepend_first_segment
     parser.add_argument("--vad_merge_window", type=optional_float, default=app_config.vad_merge_window, \
                         help="The window size (in seconds) to merge voice segments")
@@ -96,12 +96,26 @@ def cli():
     parser.add_argument("--no_speech_threshold", type=optional_float, default=app_config.no_speech_threshold, \
                         help="if the probability of the <|nospeech|> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence")
 
+    parser.add_argument("--word_timestamps", type=str2bool, default=app_config.word_timestamps, 
+                        help="(experimental) extract word-level timestamps and refine the results based on them")
+    parser.add_argument("--prepend_punctuations", type=str, default=app_config.prepend_punctuations, 
+                        help="if word_timestamps is True, merge these punctuation symbols with the next word")
+    parser.add_argument("--append_punctuations", type=str, default=app_config.append_punctuations, 
+                        help="if word_timestamps is True, merge these punctuation symbols with the previous word")
+    parser.add_argument("--highlight_words", type=str2bool, default=app_config.highlight_words,
+                        help="(requires --word_timestamps True) underline each word as it is spoken in srt and vtt")
+    parser.add_argument("--threads", type=optional_int, default=0, 
+                        help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
+
     args = parser.parse_args().__dict__
     model_names: str = args.pop("model")
     model_dir: str = args.pop("model_dir")
     output_dir: str = args.pop("output_dir")
     device: str = args.pop("device")
     os.makedirs(output_dir, exist_ok=True)
+
+    if (threads := args.pop("threads")) > 0:
+        torch.set_num_threads(threads)
 
     whisper_implementation = args.pop("whisper_implementation")
     print(f"Using {whisper_implementation} for Whisper")
@@ -154,6 +168,7 @@ def cli():
             continue
         model_cache[model_name] = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
                                         device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)
+    highlight_words = args.pop("highlight_words")
 
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores, app_config=app_config)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
@@ -181,11 +196,12 @@ def cli():
             for model_task in model_task_list:
                 model = model_cache[model_task["model"]]
                 vadOptions = VadOptions(vad, vad_merge_window, vad_max_merge_size, vad_padding, vad_prompt_window, 
-                                        VadInitialPromptMode.from_string(vad_initial_prompt_mode))
+                                    VadInitialPromptMode.from_string(vad_initial_prompt_mode))
                 taskArgs = dict(args)
                 taskArgs["task"] = model_task["task"]
                 result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **taskArgs)
-                transcriber.write_result(result, source_name, output_dir, "_" + model.model_name + "_" + taskArgs["task"])
+                
+                transcriber.write_result(result, source_name, output_dir, highlight_words)
 
     transcriber.close()
 

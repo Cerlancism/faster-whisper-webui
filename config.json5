@@ -128,5 +128,14 @@
     // If the average log probability is lower than this value, treat the decoding as failed
     "logprob_threshold": -1.0,
     // If the probability of the <no-speech> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence
-    "no_speech_threshold": 0.6
+    "no_speech_threshold": 0.6,
+
+    // (experimental) extract word-level timestamps and refine the results based on them
+    "word_timestamps": false, 
+    // if word_timestamps is True, merge these punctuation symbols with the next word
+    "prepend_punctuations": "\"\'“¿([{-",
+    // if word_timestamps is True, merge these punctuation symbols with the previous word
+    "append_punctuations": "\"\'.。,，!！?？:：”)]}、",
+    // (requires --word_timestamps True) underline each word as it is spoken in srt and vtt
+    "highlight_words": false,
 }

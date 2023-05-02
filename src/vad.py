@@ -412,6 +412,14 @@ class AbstractTranscription(ABC):
             # Add to start and end
             new_segment['start'] = segment_start + adjust_seconds
             new_segment['end'] = segment_end + adjust_seconds
+
+            # Handle words
+            if ('words' in new_segment):
+                for word in new_segment['words']:
+                    # Adjust start and end
+                    word['start'] = word['start'] + adjust_seconds
+                    word['end'] = word['end'] + adjust_seconds
+
             result.append(new_segment)
         return result
 

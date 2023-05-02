@@ -3,7 +3,7 @@ import unicodedata
 import re
 
 import zlib
-from typing import Iterator, TextIO
+from typing import Iterator, TextIO, Union
 import tqdm
 
 import urllib3
@@ -56,10 +56,14 @@ def write_txt(transcript: Iterator[dict], file: TextIO):
         print(segment['text'].strip(), file=file, flush=True)
 
 
-def write_vtt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
+def write_vtt(transcript: Iterator[dict], file: TextIO, 
+              maxLineWidth=None, highlight_words: bool = False):
+    iterator  = __subtitle_preprocessor_iterator(transcript, maxLineWidth, highlight_words)
+
     print("WEBVTT\n", file=file)
-    for segment in transcript:
-        text = process_text(segment['text'], maxLineWidth).replace('-->', '->')
+
+    for segment in iterator:
+        text = segment['text'].replace('-->', '->')
 
         print(
             f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
@@ -68,8 +72,8 @@ def write_vtt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
             flush=True,
         )
 
-
-def write_srt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
+def write_srt(transcript: Iterator[dict], file: TextIO, 
+              maxLineWidth=None, highlight_words: bool = False):
     """
     Write a transcript to a file in SRT format.
     Example usage:
@@ -81,8 +85,10 @@ def write_srt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
         with open(Path(output_dir) / (audio_basename + ".srt"), "w", encoding="utf-8") as srt:
             write_srt(result["segments"], file=srt)
     """
-    for i, segment in enumerate(transcript, start=1):
-        text = process_text(segment['text'].strip(), maxLineWidth).replace('-->', '->')
+    iterator  = __subtitle_preprocessor_iterator(transcript, maxLineWidth, highlight_words)
+
+    for i, segment in enumerate(iterator, start=1):
+        text = segment['text'].replace('-->', '->')
 
         # write srt lines
         print(
@@ -93,6 +99,110 @@ def write_srt(transcript: Iterator[dict], file: TextIO, maxLineWidth=None):
             file=file,
             flush=True,
         )
+
+def __subtitle_preprocessor_iterator(transcript: Iterator[dict], maxLineWidth: int = None, highlight_words: bool = False): 
+    for segment in transcript:
+        words = segment.get('words', [])
+
+        if len(words) == 0:
+            # Yield the segment as-is or processed
+            if maxLineWidth is None or maxLineWidth < 0:
+                yield segment
+            else:
+                yield {
+                    'start': segment['start'],
+                    'end': segment['end'],
+                    'text': process_text(segment['text'].strip(), maxLineWidth)
+                }
+            # We are done
+            continue
+
+        subtitle_start = segment['start']
+        subtitle_end = segment['end']
+
+        text_words = [ this_word["word"] for this_word in words ]
+        subtitle_text = __join_words(text_words, maxLineWidth)
+        
+        # Iterate over the words in the segment
+        if highlight_words:
+            last = subtitle_start
+
+            for i, this_word in enumerate(words):
+                start = this_word['start']
+                end = this_word['end']
+
+                if last != start:
+                    # Display the text up to this point
+                    yield {
+                        'start': last,
+                        'end': start,
+                        'text': subtitle_text
+                    }
+                
+                # Display the text with the current word highlighted
+                yield {
+                    'start': start,
+                    'end': end,
+                    'text': __join_words(
+                        [
+                            {
+                                "word": re.sub(r"^(\s*)(.*)$", r"\1<u>\2</u>", word)
+                                        if j == i
+                                        else word,
+                                # The HTML tags <u> and </u> are not displayed, 
+                                # # so they should not be counted in the word length
+                                "length": len(word)
+                            } for j, word in enumerate(text_words)
+                        ], maxLineWidth)
+                }
+                last = end
+
+            if last != subtitle_end:
+                # Display the last part of the text
+                yield {
+                    'start': last,
+                    'end': subtitle_end,
+                    'text': subtitle_text
+                }
+
+        # Just return the subtitle text
+        else:
+            yield {
+                'start': subtitle_start,
+                'end': subtitle_end,
+                'text': subtitle_text
+            }
+
+def __join_words(words: Iterator[Union[str, dict]], maxLineWidth: int = None):
+    if maxLineWidth is None or maxLineWidth < 0:
+        return " ".join(words)
+    
+    lines = []
+    current_line = ""
+    current_length = 0
+
+    for entry in words:
+        # Either accept a string or a dict with a 'word' and 'length' field
+        if isinstance(entry, dict):
+            word = entry['word']
+            word_length = entry['length']
+        else:
+            word = entry
+            word_length = len(word)
+
+        if current_length > 0 and current_length + word_length > maxLineWidth:
+            lines.append(current_line)
+            current_line = ""
+            current_length = 0
+        
+        current_length += word_length
+        # The word will be prefixed with a space by Whisper, so we don't need to add one here
+        current_line += word
+
+    if len(current_line) > 0:
+        lines.append(current_line)
+
+    return "\n".join(lines)
 
 def process_text(text: str, maxLineWidth=None):
     if (maxLineWidth is None or maxLineWidth < 0):

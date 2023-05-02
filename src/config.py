@@ -24,9 +24,12 @@ class ModelConfig:
         self.path = path
         self.type = type
 
+VAD_INITIAL_PROMPT_MODE_VALUES=["prepend_all_segments", "prepend_first_segment", "json_prompt_mode"]
+
 class VadInitialPromptMode(Enum):
     PREPEND_ALL_SEGMENTS = 1
     PREPREND_FIRST_SEGMENT = 2
+    JSON_PROMPT_MODE = 3
 
     @staticmethod
     def from_string(s: str):
@@ -36,8 +39,12 @@ class VadInitialPromptMode(Enum):
             return VadInitialPromptMode.PREPEND_ALL_SEGMENTS
         elif normalized == "prepend_first_segment":
             return VadInitialPromptMode.PREPREND_FIRST_SEGMENT
-        else:
+        elif normalized == "json_prompt_mode":
+            return VadInitialPromptMode.JSON_PROMPT_MODE
+        elif normalized is not None and normalized != "":
             raise ValueError(f"Invalid value for VadInitialPromptMode: {s}")
+        else:
+            return None
 
 class ApplicationConfig:
     def __init__(self, models: List[ModelConfig] = [], input_audio_max_duration: int = 600, 
@@ -58,7 +65,11 @@ class ApplicationConfig:
                  condition_on_previous_text: bool = True, fp16: bool = True,
                  compute_type: str = "float16", 
                  temperature_increment_on_fallback: float = 0.2, compression_ratio_threshold: float = 2.4,
-                 logprob_threshold: float = -1.0, no_speech_threshold: float = 0.6):
+                 logprob_threshold: float = -1.0, no_speech_threshold: float = 0.6,
+                 # Word timestamp settings
+                 word_timestamps: bool = False, prepend_punctuations: str = "\"\'“¿([{-",
+                 append_punctuations: str = "\"\'.。,，!！?？:：”)]}、", 
+                 highlight_words: bool = False):
         
         self.models = models
         
@@ -104,6 +115,12 @@ class ApplicationConfig:
         self.logprob_threshold = logprob_threshold
         self.no_speech_threshold = no_speech_threshold
         
+        # Word timestamp settings
+        self.word_timestamps = word_timestamps
+        self.prepend_punctuations = prepend_punctuations
+        self.append_punctuations = append_punctuations
+        self.highlight_words = highlight_words
+        
     def get_model_names(self):
         return [ x.name for x in self.models ]
 
@@ -127,7 +144,7 @@ class ApplicationConfig:
     def parse_file(config_path: str):
         import json5
 
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             # Load using json5
             data = json5.load(f)
             data_models = data.pop("models", [])
