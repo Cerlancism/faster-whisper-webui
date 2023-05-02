@@ -201,7 +201,7 @@ def cli():
                 taskArgs["task"] = model_task["task"]
                 result = transcriber.transcribe_file(model, source_path, temperature=temperature, vadOptions=vadOptions, **taskArgs)
                 
-                transcriber.write_result(result, source_name, output_dir, highlight_words)
+                transcriber.write_result(result, source_name, output_dir, highlight_words, extras="_" + model.model_name + "_" + taskArgs["task"])
 
     transcriber.close()
 
