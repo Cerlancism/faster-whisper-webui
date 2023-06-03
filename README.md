@@ -52,6 +52,13 @@ You can upload multiple files either through the "Upload files" option, or as a 
 Each audio file will then be processed in turn, and the resulting SRT/VTT/Transcript will be made available in the "Download" section. 
 When more than one file is processed, the UI will also generate a "All_Output" zip file containing all the text output files.
 
+## Diarization
+
+To detect different speakers in the audio, you can use the [whisper-diarization](https://gitlab.com/aadnk/whisper-diarization) application. 
+
+Download the JSON file after running Whisper on an audio file, and then run app.py in the 
+whisper-diarization repository with the audio file and the JSON file as arguments.
+
 ## Whisper Implementation
 
 You can choose between using `whisper` or `faster-whisper`. [Faster Whisper](https://github.com/guillaumekln/faster-whisper) as a drop-in replacement for the 
