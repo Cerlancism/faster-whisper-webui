@@ -1,10 +1,11 @@
-import pprint
 import unittest
 import numpy as np
 import sys
 
 sys.path.append('../whisper-webui')
+#print("Sys path: " + str(sys.path))
 
+from src.whisper.abstractWhisperContainer import LambdaWhisperCallback
 from src.vad import AbstractTranscription, TranscriptionConfig, VadSileroTranscription
 
 class TestVad(unittest.TestCase):
@@ -13,10 +14,11 @@ class TestVad(unittest.TestCase):
         self.transcribe_calls = []
 
     def test_transcript(self):
-        mock = MockVadTranscription()
+        mock = MockVadTranscription(mock_audio_length=120)
+        config = TranscriptionConfig()
 
         self.transcribe_calls.clear()
-        result = mock.transcribe("mock", lambda segment : self.transcribe_segments(segment))
+        result = mock.transcribe("mock", LambdaWhisperCallback(lambda segment, _1, _2, _3, _4: self.transcribe_segments(segment)), config)
 
         self.assertListEqual(self.transcribe_calls, [ 
             [30, 30],
@@ -45,8 +47,9 @@ class TestVad(unittest.TestCase):
         }
 
 class MockVadTranscription(AbstractTranscription):
-    def __init__(self):
+    def __init__(self, mock_audio_length: float = 1000):
         super().__init__()
+        self.mock_audio_length = mock_audio_length
 
     def get_audio_segment(self, str, start_time: str = None, duration: str = None):
         start_time_seconds = float(start_time.removesuffix("s"))
@@ -61,6 +64,9 @@ class MockVadTranscription(AbstractTranscription):
         result.append( {  'start': 30, 'end': 60 } )
         result.append( {  'start': 100, 'end': 200 } )
         return result
+        
+    def get_audio_duration(self, audio: str, config: TranscriptionConfig):
+        return self.mock_audio_length
 
 if __name__ == '__main__':
     unittest.main()
