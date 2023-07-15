@@ -71,7 +71,7 @@ pip install -r requirements-fasterWhisper.txt
 ```
 And then run the App or the CLI with the `--whisper_implementation faster-whisper` flag:
 ```
-python app.py --whisper_implementation faster-whisper --input_audio_max_duration -1 --server_name 127.0.0.1 --auto_parallel True
+python app.py --whisper_implementation faster-whisper --input_audio_max_duration -1 --server_name 127.0.0.1 --server_port 7860 --auto_parallel True
 ```
 You can also select the whisper implementation in `config.json5`:
 ```json5
