@@ -15,5 +15,9 @@ def create_whisper_container(whisper_implementation: str,
     elif (whisper_implementation == "faster-whisper" or whisper_implementation == "faster_whisper"):
         from src.whisper.fasterWhisperContainer import FasterWhisperContainer
         return FasterWhisperContainer(model_name=model_name, device=device, compute_type=compute_type, download_root=download_root, cache=cache, models=models)
+    elif (whisper_implementation == "dummy-whisper" or whisper_implementation == "dummy_whisper" or whisper_implementation == "dummy"):
+        # This is useful for testing
+        from src.whisper.dummyWhisperContainer import DummyWhisperContainer
+        return DummyWhisperContainer(model_name=model_name, device=device, compute_type=compute_type, download_root=download_root, cache=cache, models=models)
     else:
         raise ValueError("Unknown Whisper implementation: " + whisper_implementation)

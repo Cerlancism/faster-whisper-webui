@@ -624,4 +624,5 @@ if __name__ == '__main__':
     if (threads := args.pop("threads")) > 0:
         torch.set_num_threads(threads)
 
+    print("Using whisper implementation: " + updated_config.whisper_implementation)
     create_ui(app_config=updated_config)
