@@ -27,9 +27,11 @@
             "url": "large-v2"
         },
         // Uncomment to add custom Japanese models
+        // NOTE: For Faster-Whisper, the models must be converted to the CTranslate2 format,
+        //       see https://github.com/guillaumekln/faster-whisper#model-conversion
         //{
         //    "name": "whisper-large-v2-mix-jp",
-        //    "url": "vumichien/whisper-large-v2-mix-jp",
+        //    "url": "arc-r/faster-whisper-large-v2-mix-jp",
         //    // The type of the model. Can be "huggingface" or "whisper" - "whisper" is the default.
         //    // HuggingFace models are loaded using the HuggingFace transformers library and then converted to Whisper models.
         //    "type": "huggingface",
