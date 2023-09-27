@@ -111,9 +111,9 @@ def cli():
     parser.add_argument('--auth_token', type=str, default=None, help='HuggingFace API Token (optional)')
     parser.add_argument("--diarization", type=str2bool, default=app_config.diarization, \
                         help="whether to perform speaker diarization")
-    parser.add_argument("--num_speakers", type=int, default=None, help="Number of speakers")
-    parser.add_argument("--min_speakers", type=int, default=None, help="Minimum number of speakers")
-    parser.add_argument("--max_speakers", type=int, default=None, help="Maximum number of speakers")
+    parser.add_argument("--diarization_num_speakers", type=int, default=None, help="Number of speakers")
+    parser.add_argument("--diarization_min_speakers", type=int, default=None, help="Minimum number of speakers")
+    parser.add_argument("--diarization_max_speakers", type=int, default=None, help="Maximum number of speakers")
 
     args = parser.parse_args().__dict__
     model_name: str = args.pop("model")
@@ -151,11 +151,11 @@ def cli():
     compute_type = args.pop("compute_type")
     highlight_words = args.pop("highlight_words")
 
-    diarization = args.pop("diarization")
     auth_token = args.pop("auth_token")
-    num_speakers = args.pop("num_speakers")
-    min_speakers = args.pop("min_speakers")
-    max_speakers = args.pop("max_speakers")
+    diarization = args.pop("diarization")
+    num_speakers = args.pop("diarization_num_speakers")
+    min_speakers = args.pop("diarization_min_speakers")
+    max_speakers = args.pop("diarization_max_speakers")
     
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores, app_config=app_config)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))

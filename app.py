@@ -240,19 +240,6 @@ class WhisperTranscriber:
                     # Update progress
                     current_progress += source_audio_duration
 
-                    # Diarization
-                    if self.diarization and self.diarization_kwargs:
-                        print("Diarizing ", source.source_path)
-                        diarization_result = list(self.diarization.run(source.source_path, **self.diarization_kwargs))
-
-                        # Print result
-                        print("Diarization result: ")
-                        for entry in diarization_result:
-                            print(f"  start={entry.start:.1f}s stop={entry.end:.1f}s speaker_{entry.speaker}")
-
-                        # Add speakers to result
-                        result = self.diarization.mark_speakers(diarization_result, result)
-
                     source_download, source_text, source_vtt = self.write_result(result, filePrefix, outputDirectory, highlight_words)
 
                     if len(sources) > 1:
@@ -373,6 +360,19 @@ class WhisperTranscriber:
             else:
                 # Default VAD
                 result = whisperCallable.invoke(audio_path, 0, None, None, progress_listener=progressListener)
+        
+        # Diarization
+        if self.diarization and self.diarization_kwargs:
+            print("Diarizing ", audio_path)
+            diarization_result = list(self.diarization.run(audio_path, **self.diarization_kwargs))
+
+            # Print result
+            print("Diarization result: ")
+            for entry in diarization_result:
+                print(f"  start={entry.start:.1f}s stop={entry.end:.1f}s speaker_{entry.speaker}")
+
+            # Add speakers to result
+            result = self.diarization.mark_speakers(diarization_result, result)
 
         return result
 
