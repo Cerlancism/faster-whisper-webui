@@ -16,7 +16,8 @@ class DiarizationContainer:
         # Create parallel context if needed
         if self.diarization_context is None and self.enable_daemon_process:
             # Number of processes is set to 1 as we mainly use this in order to clean up GPU memory
-            self.diarization_context = ParallelContext(num_processes=1)
+            self.diarization_context = ParallelContext(num_processes=1, auto_cleanup_timeout_seconds=self.auto_cleanup_timeout_seconds)
+            print("Created diarization context with auto cleanup timeout of %d seconds" % self.auto_cleanup_timeout_seconds)
         
         # Run directly 
         if self.diarization_context is None:

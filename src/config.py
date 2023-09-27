@@ -72,7 +72,8 @@ class ApplicationConfig:
                  highlight_words: bool = False,
                  # Diarization
                  auth_token: str = None, diarization: bool = False, diarization_speakers: int = 2,
-                 diarization_min_speakers: int = 1, diarization_max_speakers: int = 5):
+                 diarization_min_speakers: int = 1, diarization_max_speakers: int = 5,
+                 diarization_process_timeout: int = 60):
         
         self.models = models
         
@@ -130,6 +131,7 @@ class ApplicationConfig:
         self.diarization_speakers = diarization_speakers
         self.diarization_min_speakers = diarization_min_speakers
         self.diarization_max_speakers = diarization_max_speakers
+        self.diarization_process_timeout = diarization_process_timeout
 
     def get_model_names(self):
         return [ x.name for x in self.models ]

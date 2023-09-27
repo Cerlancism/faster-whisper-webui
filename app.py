@@ -33,7 +33,7 @@ import ffmpeg
 import gradio as gr
 
 from src.download import ExceededMaximumDuration, download_url
-from src.utils import optional_int, slugify, write_srt, write_vtt
+from src.utils import optional_int, slugify, str2bool, write_srt, write_vtt
 from src.vad import AbstractTranscription, NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
 from src.whisper.abstractWhisperContainer import AbstractWhisperContainer
 from src.whisper.whisperFactory import create_whisper_container
@@ -95,7 +95,8 @@ class WhisperTranscriber:
     def set_diarization(self, auth_token: str, enable_daemon_process: bool = True, **kwargs):
         if self.diarization is None:
             self.diarization = DiarizationContainer(auth_token=auth_token, enable_daemon_process=enable_daemon_process, 
-                                                    auto_cleanup_timeout_seconds=self.vad_process_timeout, cache=self.model_cache)
+                                                    auto_cleanup_timeout_seconds=self.app_config.diarization_process_timeout, 
+                                                    cache=self.model_cache)
         # Set parameters
         self.diarization_kwargs = kwargs
 
@@ -688,6 +689,15 @@ if __name__ == '__main__':
                         help="the compute type to use for inference")
     parser.add_argument("--threads", type=optional_int, default=0, 
                         help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
+    
+    parser.add_argument('--auth_token', type=str, default=default_app_config.auth_token, help='HuggingFace API Token (optional)')
+    parser.add_argument("--diarization", type=str2bool, default=default_app_config.diarization, \
+                        help="whether to perform speaker diarization")
+    parser.add_argument("--diarization_num_speakers", type=int, default=default_app_config.diarization_speakers, help="Number of speakers")
+    parser.add_argument("--diarization_min_speakers", type=int, default=default_app_config.diarization_min_speakers, help="Minimum number of speakers")
+    parser.add_argument("--diarization_max_speakers", type=int, default=default_app_config.diarization_max_speakers, help="Maximum number of speakers")
+    parser.add_argument("--diarization_process_timeout", type=int, default=default_app_config.diarization_process_timeout, \
+                        help="Number of seconds before inactivate diarization processes are terminated. Use 0 to close processes immediately, or None for no timeout.")
 
     args = parser.parse_args().__dict__
 
