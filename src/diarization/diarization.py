@@ -1,4 +1,5 @@
 import argparse
+import gc
 import json
 import os
 from pathlib import Path
@@ -7,9 +8,6 @@ from typing import TYPE_CHECKING, List
 import torch
 
 import ffmpeg
-
-from src.diarization.transcriptLoader import load_transcript
-from src.utils import write_srt
 
 class DiarizationEntry:
     def __init__(self, start, end, speaker):
@@ -28,7 +26,7 @@ class DiarizationEntry:
         }
 
 class Diarization:
-    def __init__(self, auth_token=None, **kwargs):
+    def __init__(self, auth_token=None):
         if auth_token is None:
             auth_token = os.environ.get("HK_ACCESS_TOKEN")
             if auth_token is None:
@@ -37,7 +35,6 @@ class Diarization:
         self.auth_token = auth_token
         self.initialized = False
         self.pipeline = None
-        self.pipeline_kwargs = kwargs
 
     @staticmethod
     def has_libraries():
@@ -54,6 +51,7 @@ class Diarization:
         from pyannote.audio import Pipeline
 
         self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2.1", use_auth_token=self.auth_token)
+        self.initialized = True
 
         # Load GPU mode if available
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -63,7 +61,7 @@ class Diarization:
         else:
             print("Diarization - using CPU")
 
-    def run(self, audio_file):
+    def run(self, audio_file, **kwargs):
         self.initialize()
         audio_file_obj = Path(audio_file)
 
@@ -78,7 +76,7 @@ class Diarization:
             except ffmpeg.Error as e:
                 print(f"Error occurred during audio conversion: {e.stderr}")
 
-        diarization = self.pipeline(target_file, **self.pipeline_kwargs)
+        diarization = self.pipeline(target_file, **kwargs)
 
         if target_file != audio_file:
             # Delete temp file
@@ -148,6 +146,9 @@ def _write_file(input_file: str, output_path: str, output_extension: str, file_w
     print(f"Output saved to {effective_path}")
 
 def main():
+    from src.utils import write_srt
+    from src.diarization.transcriptLoader import load_transcript
+
     parser = argparse.ArgumentParser(description='Add speakers to a SRT file or Whisper JSON file using pyannote/speaker-diarization.')
     parser.add_argument('audio_file', type=str, help='Input audio file')
     parser.add_argument('whisper_file', type=str, help='Input Whisper JSON/SRT file')
@@ -166,8 +167,8 @@ def main():
     # Read whisper JSON or SRT file
     whisper_result = load_transcript(args.whisper_file)
 
-    diarization = Diarization(auth_token=args.auth_token, num_speakers=args.num_speakers, min_speakers=args.min_speakers, max_speakers=args.max_speakers)
-    diarization_result = list(diarization.run(args.audio_file))
+    diarization = Diarization(auth_token=args.auth_token)
+    diarization_result = list(diarization.run(args.audio_file, num_speakers=args.num_speakers, min_speakers=args.min_speakers, max_speakers=args.max_speakers))
 
     # Print result
     print("Diarization result:")
@@ -186,3 +187,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
+    #test = Diarization()
+    #print("Initializing")
+    #test.initialize()
+
+    #input("Press Enter to continue...")

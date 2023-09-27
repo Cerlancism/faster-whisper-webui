@@ -162,7 +162,7 @@ def cli():
     transcriber.set_auto_parallel(auto_parallel)
 
     if diarization:
-        transcriber.set_diarization(Diarization(auth_token=auth_token, num_speakers=num_speakers, min_speakers=min_speakers, max_speakers=max_speakers))
+        transcriber.set_diarization(auth_token=auth_token, enable_daemon_process=False, num_speakers=num_speakers, min_speakers=min_speakers, max_speakers=max_speakers)
 
     model = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
                                      device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)

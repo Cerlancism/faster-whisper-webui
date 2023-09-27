@@ -15,6 +15,7 @@ import torch
 
 from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
 from src.diarization.diarization import Diarization
+from src.diarization.diarizationContainer import DiarizationContainer
 from src.hooks.progressListener import ProgressListener
 from src.hooks.subTaskProgressListener import SubTaskProgressListener
 from src.hooks.whisperProgressHook import create_progress_listener_handle
@@ -74,7 +75,10 @@ class WhisperTranscriber:
         self.deleteUploadedFiles = delete_uploaded_files
         self.output_dir = output_dir
 
-        self.diarization: Diarization = None
+        # Support for diarization
+        self.diarization: DiarizationContainer = None
+        # Dictionary with parameters to pass to diarization.run - if None, diarization is not enabled
+        self.diarization_kwargs = None
         self.app_config = app_config
 
     def set_parallel_devices(self, vad_parallel_devices: str):
@@ -87,6 +91,17 @@ class WhisperTranscriber:
 
             self.vad_cpu_cores = min(os.cpu_count(), MAX_AUTO_CPU_CORES)
             print("[Auto parallel] Using GPU devices " + str(self.parallel_device_list) + " and " + str(self.vad_cpu_cores) + " CPU cores for VAD/transcription.")
+
+    def set_diarization(self, auth_token: str, enable_daemon_process: bool = True, **kwargs):
+        if self.diarization is None:
+            self.diarization = DiarizationContainer(auth_token=auth_token, enable_daemon_process=enable_daemon_process, 
+                                                    auto_cleanup_timeout_seconds=self.vad_process_timeout, cache=self.model_cache)
+        # Set parameters
+        self.diarization_kwargs = kwargs
+
+    def unset_diarization(self):
+        self.diarization.cleanup()
+        self.diarization_kwargs = None
 
     # Entry function for the simple tab
     def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
@@ -108,9 +123,9 @@ class WhisperTranscriber:
         vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, self.app_config.vad_padding, self.app_config.vad_prompt_window, self.app_config.vad_initial_prompt_mode)
 
         if diarization:
-            self.diarization = Diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers)
+            self.set_diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers)
         else:
-            self.diarization = None
+            self.unset_diarization()
 
         return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions, 
                                      word_timestamps=word_timestamps, highlight_words=highlight_words, progress=progress)
@@ -157,10 +172,10 @@ class WhisperTranscriber:
 
         # Set diarization
         if diarization:
-            self.diarization = Diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers, 
-                                           min_speakers=diarization_min_speakers, max_speakers=diarization_max_speakers)
+            self.set_diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers, 
+                                 min_speakers=diarization_min_speakers, max_speakers=diarization_max_speakers)
         else:
-            self.diarization = None
+            self.unset_diarization()
 
         return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions,
                                      initial_prompt=initial_prompt, temperature=temperature, best_of=best_of, beam_size=beam_size, patience=patience, length_penalty=length_penalty, suppress_tokens=suppress_tokens,
@@ -226,9 +241,9 @@ class WhisperTranscriber:
                     current_progress += source_audio_duration
 
                     # Diarization
-                    if self.diarization:
+                    if self.diarization and self.diarization_kwargs:
                         print("Diarizing ", source.source_path)
-                        diarization_result = list(self.diarization.run(source.source_path))
+                        diarization_result = list(self.diarization.run(source.source_path, **self.diarization_kwargs))
 
                         # Print result
                         print("Diarization result: ")
@@ -494,6 +509,10 @@ class WhisperTranscriber:
         if (self.cpu_parallel_context is not None):
             self.cpu_parallel_context.close()
 
+        # Cleanup diarization
+        if (self.diarization is not None):
+            self.diarization.cleanup()
+            self.diarization = None
 
 def create_ui(app_config: ApplicationConfig):
     ui = WhisperTranscriber(app_config.input_audio_max_duration, app_config.vad_process_timeout, app_config.vad_cpu_cores, 
