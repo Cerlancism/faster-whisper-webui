@@ -7,3 +7,9 @@ yt-dlp
 torchaudio
 altair
 json5
+
+# Needed by diarization
+intervaltree
+srt
+torch
+https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip

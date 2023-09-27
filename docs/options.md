@@ -80,6 +80,17 @@ number of seconds after the line has finished. For instance, if a line ends at 1
 Note that detected lines in gaps between speech sections will not be included in the prompt 
 (if silero-vad or silero-vad-expand-into-gaps) is used.
 
+## Diarization
+
+If checked, Pyannote will be used to detect speakers in the audio, and label them as (SPEAKER 00), (SPEAKER 01), etc. 
+
+This requires a HuggingFace API key to function, which can be supplied with the `--auth_token` command line option for the CLI,
+set in the `config.json5` file for the GUI, or provided via the `HK_AUTH_TOKEN` environment variable.
+
+## Diarization - Speakers
+
+The number of speakers to detect. If set to 0, Pyannote will attempt to detect the number of speakers automatically.
+
 # Command Line Options
 
 Both `app.py` and `cli.py` also accept command line options, such as the ability to enable parallel execution on multiple
@@ -132,3 +143,11 @@ If the average log probability is lower than this value, treat the decoding as f
 
 ## No speech threshold
 If the probability of the <|nospeech|> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence. Default is 0.6.
+
+## Diarization - Min Speakers
+
+The minimum number of speakers for Pyannote to detect.
+
+## Diarization - Max Speakers
+
+The maximum number of speakers for Pyannote to detect.

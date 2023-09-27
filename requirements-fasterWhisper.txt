@@ -7,3 +7,9 @@ json5
 torch
 torchaudio
 more_itertools
+
+# Needed by diarization
+intervaltree
+srt
+torch
+https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip
