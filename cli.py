@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from app import VadOptions, WhisperTranscriber
 from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
+from src.diarization.diarization import Diarization
 from src.download import download_url
 from src.languages import get_language_names
 
@@ -106,6 +107,14 @@ def cli():
     parser.add_argument("--threads", type=optional_int, default=0, 
                         help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
 
+    # Diarization
+    parser.add_argument('--auth_token', type=str, default=None, help='HuggingFace API Token (optional)')
+    parser.add_argument("--diarization", type=str2bool, default=app_config.diarization, \
+                        help="whether to perform speaker diarization")
+    parser.add_argument("--num_speakers", type=int, default=None, help="Number of speakers")
+    parser.add_argument("--min_speakers", type=int, default=None, help="Minimum number of speakers")
+    parser.add_argument("--max_speakers", type=int, default=None, help="Maximum number of speakers")
+
     args = parser.parse_args().__dict__
     model_name: str = args.pop("model")
     model_dir: str = args.pop("model_dir")
@@ -142,9 +151,18 @@ def cli():
     compute_type = args.pop("compute_type")
     highlight_words = args.pop("highlight_words")
 
+    diarization = args.pop("diarization")
+    auth_token = args.pop("auth_token")
+    num_speakers = args.pop("num_speakers")
+    min_speakers = args.pop("min_speakers")
+    max_speakers = args.pop("max_speakers")
+    
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores, app_config=app_config)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
     transcriber.set_auto_parallel(auto_parallel)
+
+    if diarization:
+        transcriber.set_diarization(Diarization(auth_token=auth_token, num_speakers=num_speakers, min_speakers=min_speakers, max_speakers=max_speakers))
 
     model = create_whisper_container(whisper_implementation=whisper_implementation, model_name=model_name, 
                                      device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)

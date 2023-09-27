@@ -138,4 +138,15 @@
     "append_punctuations": "\"\'.。,，!！?？:：”)]}、",
     // (requires --word_timestamps True) underline each word as it is spoken in srt and vtt
     "highlight_words": false,
+
+    // Diarization settings
+    "auth_token": null,
+    // Whether to perform speaker diarization
+    "diarization": false,
+    // The number of speakers to detect
+    "diarization_speakers": 2,
+    // The minimum number of speakers to detect
+    "diarization_min_speakers": 1,
+    // The maximum number of speakers to detect
+    "diarization_max_speakers": 5,
 }
