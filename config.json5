@@ -150,5 +150,7 @@
     // The minimum number of speakers to detect
     "diarization_min_speakers": 1,
     // The maximum number of speakers to detect
-    "diarization_max_speakers": 5,
+    "diarization_max_speakers": 8,
+    // The number of seconds before inactivate processes are terminated. Use 0 to close processes immediately, or None for no timeout.
+    "diarization_process_timeout": 60,
 }
