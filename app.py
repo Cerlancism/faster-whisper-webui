@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
 import math
-from typing import Iterator, Union
+from typing import Callable, Iterator, Union
 import argparse
 
 from io import StringIO
@@ -16,14 +16,14 @@ import torch
 from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
 from src.diarization.diarization import Diarization
 from src.diarization.diarizationContainer import DiarizationContainer
+from src.diarization.transcriptLoader import load_transcript
 from src.hooks.progressListener import ProgressListener
 from src.hooks.subTaskProgressListener import SubTaskProgressListener
-from src.hooks.whisperProgressHook import create_progress_listener_handle
 from src.languages import get_language_names
 from src.modelCache import ModelCache
 from src.prompts.jsonPromptStrategy import JsonPromptStrategy
 from src.prompts.prependPromptStrategy import PrependPromptStrategy
-from src.source import get_audio_source_collection
+from src.source import AudioSource, get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
 
 # External programs
@@ -101,7 +101,8 @@ class WhisperTranscriber:
         self.diarization_kwargs = kwargs
 
     def unset_diarization(self):
-        self.diarization.cleanup()
+        if self.diarization is not None:
+            self.diarization.cleanup()
         self.diarization_kwargs = None
 
     # Entry function for the simple tab
@@ -185,19 +186,59 @@ class WhisperTranscriber:
                                      word_timestamps=word_timestamps, prepend_punctuations=prepend_punctuations, append_punctuations=append_punctuations, highlight_words=highlight_words,
                                      progress=progress)
 
+    # Perform diarization given a specific input audio file and whisper file
+    def perform_extra(self, languageName, urlData, singleFile, whisper_file: str, 
+                      highlight_words: bool = False,
+                      diarization: bool = False, diarization_speakers: int = 2, diarization_min_speakers = 1, diarization_max_speakers = 5, progress=gr.Progress()):
+    
+        if whisper_file is None:
+            raise ValueError("whisper_file is required")
+
+         # Set diarization
+        if diarization:
+            self.set_diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers, 
+                                min_speakers=diarization_min_speakers, max_speakers=diarization_max_speakers)
+        else:
+            self.unset_diarization()
+        
+        def custom_transcribe_file(source: AudioSource):
+            result = load_transcript(whisper_file.name)
+            
+            # Set language if not set
+            if not "language" in result:
+                result["language"] = languageName
+
+            # Mark speakers
+            result = self._handle_diarization(source.source_path, result)
+            return result
+        
+        multipleFiles = [singleFile] if singleFile else None
+        
+        # Will return download, text, vtt
+        return self.transcribe_webui("base", "", urlData, multipleFiles, None, None, None, 
+                                       progress=progress,highlight_words=highlight_words,
+                                       override_transcribe_file=custom_transcribe_file, override_max_sources=1)
+
     def transcribe_webui(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                          vadOptions: VadOptions, progress: gr.Progress = None, highlight_words: bool = False, 
+                         override_transcribe_file: Callable[[AudioSource], dict] = None, override_max_sources = None,
                          **decodeOptions: dict):
         try:
             sources = self.__get_source(urlData, multipleFiles, microphoneData)
+
+            if override_max_sources is not None and len(sources) > override_max_sources:
+                raise ValueError("Maximum number of sources is " + str(override_max_sources) + ", but " + str(len(sources)) + " were provided")
 
             try:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                model = create_whisper_container(whisper_implementation=self.app_config.whisper_implementation, 
-                                                 model_name=selectedModel, compute_type=self.app_config.compute_type, 
-                                                 cache=self.model_cache, models=self.app_config.models)
+                if override_transcribe_file is None:
+                    model = create_whisper_container(whisper_implementation=self.app_config.whisper_implementation, 
+                                                    model_name=selectedModel, compute_type=self.app_config.compute_type, 
+                                                    cache=self.model_cache, models=self.app_config.models)
+                else:
+                    model = None
 
                 # Result
                 download = []
@@ -234,8 +275,12 @@ class WhisperTranscriber:
                                                    sub_task_start=current_progress,
                                                    sub_task_total=source_audio_duration)
 
-                    # Transcribe
-                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vadOptions, scaled_progress_listener, **decodeOptions)
+                    # Transcribe using the override function if specified
+                    if override_transcribe_file is None:
+                        result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vadOptions, scaled_progress_listener, **decodeOptions)
+                    else:
+                        result = override_transcribe_file(source)
+
                     filePrefix = slugify(source_prefix + source.get_short_name(), allow_unicode=True)
 
                     # Update progress
@@ -363,6 +408,10 @@ class WhisperTranscriber:
                 result = whisperCallable.invoke(audio_path, 0, None, None, progress_listener=progressListener)
         
         # Diarization
+        result = self._handle_diarization(audio_path, result)
+        return result
+
+    def _handle_diarization(self, audio_path: str, input: dict):
         if self.diarization and self.diarization_kwargs:
             print("Diarizing ", audio_path)
             diarization_result = list(self.diarization.run(audio_path, **self.diarization_kwargs))
@@ -373,9 +422,9 @@ class WhisperTranscriber:
                 print(f"  start={entry.start:.1f}s stop={entry.end:.1f}s speaker_{entry.speaker}")
 
             # Add speakers to result
-            result = self.diarization.mark_speakers(diarization_result, result)
+            input = self.diarization.mark_speakers(diarization_result, input)
 
-        return result
+        return input
 
     def _create_progress_listener(self, progress: gr.Progress):
         if (progress is None):
@@ -449,7 +498,7 @@ class WhisperTranscriber:
             os.makedirs(output_dir)
 
         text = result["text"]
-        language = result["language"]
+        language = result["language"] if "language" in result else None
         languageMaxLineWidth = self.__get_max_line_width(language)
 
         print("Max line width " + str(languageMaxLineWidth))
@@ -635,7 +684,25 @@ def create_ui(app_config: ApplicationConfig):
         gr.Text(label="Segments")
     ])
 
-    demo = gr.TabbedInterface([simple_transcribe, full_transcribe], tab_names=["Simple", "Full"])
+    perform_extra_interface = gr.Interface(fn=ui.perform_extra,
+                                   description="Perform additional processing on a given JSON or SRT file", article=ui_article, inputs=[
+        gr.Dropdown(choices=sorted(get_language_names()), label="Language", value=app_config.language),
+        gr.Text(label="URL (YouTube, etc.)"),
+        gr.File(label="Upload Audio File", file_count="single"),
+        gr.File(label="Upload JSON/SRT File", file_count="single"),
+        gr.Checkbox(label="Word Timestamps - Highlight Words", value=app_config.highlight_words),
+
+        *common_diarization_inputs(),
+        gr.Number(label="Diarization - Min Speakers", precision=0, value=app_config.diarization_min_speakers, interactive=has_diarization_libs),
+        gr.Number(label="Diarization - Max Speakers", precision=0, value=app_config.diarization_max_speakers, interactive=has_diarization_libs),
+
+    ], outputs=[
+        gr.File(label="Download"),
+        gr.Text(label="Transcription"), 
+        gr.Text(label="Segments")
+    ])
+
+    demo = gr.TabbedInterface([simple_transcribe, full_transcribe, perform_extra_interface], tab_names=["Simple", "Full", "Extra"])
 
     # Queue up the demo
     if is_queue_mode:
