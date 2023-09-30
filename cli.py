@@ -108,12 +108,12 @@ def cli():
                         help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
 
     # Diarization
-    parser.add_argument('--auth_token', type=str, default=None, help='HuggingFace API Token (optional)')
+    parser.add_argument('--auth_token', type=str, default=app_config.auth_token, help='HuggingFace API Token (optional)')
     parser.add_argument("--diarization", type=str2bool, default=app_config.diarization, \
                         help="whether to perform speaker diarization")
-    parser.add_argument("--diarization_num_speakers", type=int, default=None, help="Number of speakers")
-    parser.add_argument("--diarization_min_speakers", type=int, default=None, help="Minimum number of speakers")
-    parser.add_argument("--diarization_max_speakers", type=int, default=None, help="Maximum number of speakers")
+    parser.add_argument("--diarization_num_speakers", type=int, default=app_config.diarization_speakers, help="Number of speakers")
+    parser.add_argument("--diarization_min_speakers", type=int, default=app_config.diarization_min_speakers, help="Minimum number of speakers")
+    parser.add_argument("--diarization_max_speakers", type=int, default=app_config.diarization_max_speakers, help="Maximum number of speakers")
 
     args = parser.parse_args().__dict__
     model_name: str = args.pop("model")
