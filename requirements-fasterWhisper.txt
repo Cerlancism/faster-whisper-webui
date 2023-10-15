@@ -1,9 +1,15 @@
 ctranslate2
 faster-whisper
 ffmpeg-python==0.2.0
-gradio==3.23.0 
+gradio==3.38.0
 yt-dlp
 json5
 torch
 torchaudio
 more_itertools
+
+# Needed by diarization
+intervaltree
+srt
+torch
+https://github.com/pyannote/pyannote-audio/archive/refs/heads/develop.zip

@@ -9,6 +9,7 @@ import threading
 import torch
 from app import VadOptions, WhisperTranscriber
 from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
+from src.diarization.diarization import Diarization
 from src.download import download_url
 from src.languages import get_language_names
 
@@ -107,6 +108,14 @@ def cli():
     parser.add_argument("--threads", type=optional_int, default=0, 
                         help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
 
+    # Diarization
+    parser.add_argument('--auth_token', type=str, default=app_config.auth_token, help='HuggingFace API Token (optional)')
+    parser.add_argument("--diarization", type=str2bool, default=app_config.diarization, \
+                        help="whether to perform speaker diarization")
+    parser.add_argument("--diarization_num_speakers", type=int, default=app_config.diarization_speakers, help="Number of speakers")
+    parser.add_argument("--diarization_min_speakers", type=int, default=app_config.diarization_min_speakers, help="Minimum number of speakers")
+    parser.add_argument("--diarization_max_speakers", type=int, default=app_config.diarization_max_speakers, help="Maximum number of speakers")
+
     args = parser.parse_args().__dict__
     model_names: str = args.pop("model")
     model_dir: str = args.pop("model_dir")
@@ -170,10 +179,19 @@ def cli():
                                         device=device, compute_type=compute_type, download_root=model_dir, models=app_config.models)
     highlight_words = args.pop("highlight_words")
 
+    auth_token = args.pop("auth_token")
+    diarization = args.pop("diarization")
+    num_speakers = args.pop("diarization_num_speakers")
+    min_speakers = args.pop("diarization_min_speakers")
+    max_speakers = args.pop("diarization_max_speakers")
+    
     transcriber = WhisperTranscriber(delete_uploaded_files=False, vad_cpu_cores=vad_cpu_cores, app_config=app_config)
     transcriber.set_parallel_devices(args.pop("vad_parallel_devices"))
     transcriber.set_auto_parallel(auto_parallel)
 
+    if diarization:
+        transcriber.set_diarization(auth_token=auth_token, enable_daemon_process=False, num_speakers=num_speakers, min_speakers=min_speakers, max_speakers=max_speakers)
+    
     if (transcriber._has_parallel_devices()):
         print("Using parallel devices:", transcriber.parallel_device_list)
 

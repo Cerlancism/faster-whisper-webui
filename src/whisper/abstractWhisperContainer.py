@@ -1,5 +1,5 @@
 import abc
-from typing import List
+from typing import Any, Callable, List
 
 from src.config import ModelConfig, VadInitialPromptMode
 
@@ -9,7 +9,7 @@ from src.prompts.abstractPromptStrategy import AbstractPromptStrategy
 
 class AbstractWhisperCallback:
     def __init__(self):
-        self.__prompt_mode_gpt = None
+        pass
 
     @abc.abstractmethod
     def invoke(self, audio, segment_index: int, prompt: str, detected_language: str, progress_listener: ProgressListener = None):
@@ -28,6 +28,14 @@ class AbstractWhisperCallback:
             A callback to receive progress updates.
         """
         raise NotImplementedError()
+
+class LambdaWhisperCallback(AbstractWhisperCallback):
+    def __init__(self, callback_lambda: Callable[[Any, int, str, str, ProgressListener], None]):
+        super().__init__()
+        self.callback_lambda = callback_lambda
+
+    def invoke(self, audio, segment_index: int, prompt: str, detected_language: str, progress_listener: ProgressListener = None):
+        return self.callback_lambda(audio, segment_index, prompt, detected_language, progress_listener)
 
 class AbstractWhisperContainer:
     def __init__(self, model_name: str, device: str = None, compute_type: str = "float16",

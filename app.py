@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
 import math
-from typing import Iterator, Union
+from typing import Callable, Iterator, Union
 import argparse
 
 from io import StringIO
@@ -14,14 +14,16 @@ import numpy as np
 import torch
 
 from src.config import VAD_INITIAL_PROMPT_MODE_VALUES, ApplicationConfig, VadInitialPromptMode
+from src.diarization.diarization import Diarization
+from src.diarization.diarizationContainer import DiarizationContainer
+from src.diarization.transcriptLoader import load_transcript
 from src.hooks.progressListener import ProgressListener
 from src.hooks.subTaskProgressListener import SubTaskProgressListener
-from src.hooks.whisperProgressHook import create_progress_listener_handle
 from src.languages import get_language_names
 from src.modelCache import ModelCache
 from src.prompts.jsonPromptStrategy import JsonPromptStrategy
 from src.prompts.prependPromptStrategy import PrependPromptStrategy
-from src.source import get_audio_source_collection
+from src.source import AudioSource, get_audio_source_collection
 from src.vadParallel import ParallelContext, ParallelTranscription
 
 # External programs
@@ -31,7 +33,7 @@ import ffmpeg
 import gradio as gr
 
 from src.download import ExceededMaximumDuration, download_url
-from src.utils import optional_int, slugify, write_srt, write_vtt
+from src.utils import optional_int, slugify, str2bool, write_srt, write_vtt
 from src.vad import AbstractTranscription, NonSpeechStrategy, PeriodicTranscriptionConfig, TranscriptionConfig, VadPeriodicTranscription, VadSileroTranscription
 from src.whisper.abstractWhisperContainer import AbstractWhisperContainer
 from src.whisper.whisperFactory import create_whisper_container
@@ -73,6 +75,10 @@ class WhisperTranscriber:
         self.deleteUploadedFiles = delete_uploaded_files
         self.output_dir = output_dir
 
+        # Support for diarization
+        self.diarization: DiarizationContainer = None
+        # Dictionary with parameters to pass to diarization.run - if None, diarization is not enabled
+        self.diarization_kwargs = None
         self.app_config = app_config
 
     def set_parallel_devices(self, vad_parallel_devices: str):
@@ -86,21 +92,42 @@ class WhisperTranscriber:
             self.vad_cpu_cores = min(os.cpu_count(), MAX_AUTO_CPU_CORES)
             print("[Auto parallel] Using GPU devices " + str(self.parallel_device_list) + " and " + str(self.vad_cpu_cores) + " CPU cores for VAD/transcription.")
 
+    def set_diarization(self, auth_token: str, enable_daemon_process: bool = True, **kwargs):
+        if self.diarization is None:
+            self.diarization = DiarizationContainer(auth_token=auth_token, enable_daemon_process=enable_daemon_process, 
+                                                    auto_cleanup_timeout_seconds=self.app_config.diarization_process_timeout, 
+                                                    cache=self.model_cache)
+        # Set parameters
+        self.diarization_kwargs = kwargs
+
+    def unset_diarization(self):
+        if self.diarization is not None:
+            self.diarization.cleanup()
+        self.diarization_kwargs = None
+
     # Entry function for the simple tab
     def transcribe_webui_simple(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                                 vad, vadMergeWindow, vadMaxMergeSize, 
-                                word_timestamps: bool = False, highlight_words: bool = False):
+                                word_timestamps: bool = False, highlight_words: bool = False,
+                                diarization: bool = False, diarization_speakers: int = 2):
         return self.transcribe_webui_simple_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                                                      vad, vadMergeWindow, vadMaxMergeSize, 
-                                                     word_timestamps, highlight_words)
+                                                     word_timestamps, highlight_words, 
+                                                     diarization, diarization_speakers)
     
     # Entry function for the simple tab progress
     def transcribe_webui_simple_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                                          vad, vadMergeWindow, vadMaxMergeSize, 
                                          word_timestamps: bool = False, highlight_words: bool = False, 
+                                         diarization: bool = False, diarization_speakers: int = 2,
                                          progress=gr.Progress()):
         
         vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, self.app_config.vad_padding, self.app_config.vad_prompt_window, self.app_config.vad_initial_prompt_mode)
+
+        if diarization:
+            self.set_diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers)
+        else:
+            self.unset_diarization()
 
         return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions, 
                                      word_timestamps=word_timestamps, highlight_words=highlight_words, progress=progress)
@@ -112,14 +139,18 @@ class WhisperTranscriber:
                               word_timestamps: bool, highlight_words: bool, prepend_punctuations: str, append_punctuations: str,
                               initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
                               condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
-                              compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float):
+                              compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float,
+                              diarization: bool = False, diarization_speakers: int = 2, 
+                              diarization_min_speakers = 1, diarization_max_speakers = 5):
         
         return self.transcribe_webui_full_progress(modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                                 vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode,
                                 word_timestamps, highlight_words, prepend_punctuations, append_punctuations,
                                 initial_prompt, temperature, best_of, beam_size, patience, length_penalty, suppress_tokens,
                                 condition_on_previous_text, fp16, temperature_increment_on_fallback,
-                                compression_ratio_threshold, logprob_threshold, no_speech_threshold)
+                                compression_ratio_threshold, logprob_threshold, no_speech_threshold,
+                                diarization, diarization_speakers, 
+                                diarization_min_speakers, diarization_max_speakers)
 
     # Entry function for the full tab with progress
     def transcribe_webui_full_progress(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
@@ -129,6 +160,8 @@ class WhisperTranscriber:
                                         initial_prompt: str, temperature: float, best_of: int, beam_size: int, patience: float, length_penalty: float, suppress_tokens: str, 
                                         condition_on_previous_text: bool, fp16: bool, temperature_increment_on_fallback: float, 
                                         compression_ratio_threshold: float, logprob_threshold: float, no_speech_threshold: float, 
+                                        diarization: bool = False, diarization_speakers: int = 2, 
+                                        diarization_min_speakers = 1, diarization_max_speakers = 5,
                                         progress=gr.Progress()):
 
         # Handle temperature_increment_on_fallback
@@ -139,6 +172,13 @@ class WhisperTranscriber:
 
         vadOptions = VadOptions(vad, vadMergeWindow, vadMaxMergeSize, vadPadding, vadPromptWindow, vadInitialPromptMode)
 
+        # Set diarization
+        if diarization:
+            self.set_diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers, 
+                                 min_speakers=diarization_min_speakers, max_speakers=diarization_max_speakers)
+        else:
+            self.unset_diarization()
+
         return self.transcribe_webui(modelName, languageName, urlData, multipleFiles, microphoneData, task, vadOptions,
                                      initial_prompt=initial_prompt, temperature=temperature, best_of=best_of, beam_size=beam_size, patience=patience, length_penalty=length_penalty, suppress_tokens=suppress_tokens,
                                      condition_on_previous_text=condition_on_previous_text, fp16=fp16,
@@ -146,19 +186,59 @@ class WhisperTranscriber:
                                      word_timestamps=word_timestamps, prepend_punctuations=prepend_punctuations, append_punctuations=append_punctuations, highlight_words=highlight_words,
                                      progress=progress)
 
+    # Perform diarization given a specific input audio file and whisper file
+    def perform_extra(self, languageName, urlData, singleFile, whisper_file: str, 
+                      highlight_words: bool = False,
+                      diarization: bool = False, diarization_speakers: int = 2, diarization_min_speakers = 1, diarization_max_speakers = 5, progress=gr.Progress()):
+    
+        if whisper_file is None:
+            raise ValueError("whisper_file is required")
+
+         # Set diarization
+        if diarization:
+            self.set_diarization(auth_token=self.app_config.auth_token, num_speakers=diarization_speakers, 
+                                min_speakers=diarization_min_speakers, max_speakers=diarization_max_speakers)
+        else:
+            self.unset_diarization()
+        
+        def custom_transcribe_file(source: AudioSource):
+            result = load_transcript(whisper_file.name)
+            
+            # Set language if not set
+            if not "language" in result:
+                result["language"] = languageName
+
+            # Mark speakers
+            result = self._handle_diarization(source.source_path, result)
+            return result
+        
+        multipleFiles = [singleFile] if singleFile else None
+        
+        # Will return download, text, vtt
+        return self.transcribe_webui("base", "", urlData, multipleFiles, None, None, None, 
+                                       progress=progress,highlight_words=highlight_words,
+                                       override_transcribe_file=custom_transcribe_file, override_max_sources=1)
+
     def transcribe_webui(self, modelName, languageName, urlData, multipleFiles, microphoneData, task, 
                          vadOptions: VadOptions, progress: gr.Progress = None, highlight_words: bool = False, 
+                         override_transcribe_file: Callable[[AudioSource], dict] = None, override_max_sources = None,
                          **decodeOptions: dict):
         try:
             sources = self.__get_source(urlData, multipleFiles, microphoneData)
+
+            if override_max_sources is not None and len(sources) > override_max_sources:
+                raise ValueError("Maximum number of sources is " + str(override_max_sources) + ", but " + str(len(sources)) + " were provided")
 
             try:
                 selectedLanguage = languageName.lower() if len(languageName) > 0 else None
                 selectedModel = modelName if modelName is not None else "base"
 
-                model = create_whisper_container(whisper_implementation=self.app_config.whisper_implementation, 
-                                                 model_name=selectedModel, compute_type=self.app_config.compute_type, 
-                                                 cache=self.model_cache, models=self.app_config.models)
+                if override_transcribe_file is None:
+                    model = create_whisper_container(whisper_implementation=self.app_config.whisper_implementation, 
+                                                    model_name=selectedModel, compute_type=self.app_config.compute_type, 
+                                                    cache=self.model_cache, models=self.app_config.models)
+                else:
+                    model = None
 
                 # Result
                 download = []
@@ -195,8 +275,12 @@ class WhisperTranscriber:
                                                    sub_task_start=current_progress,
                                                    sub_task_total=source_audio_duration)
 
-                    # Transcribe
-                    result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vadOptions, scaled_progress_listener, **decodeOptions)
+                    # Transcribe using the override function if specified
+                    if override_transcribe_file is None:
+                        result = self.transcribe_file(model, source.source_path, selectedLanguage, task, vadOptions, scaled_progress_listener, **decodeOptions)
+                    else:
+                        result = override_transcribe_file(source)
+
                     filePrefix = slugify(source_prefix + source.get_short_name(), allow_unicode=True)
 
                     # Update progress
@@ -324,8 +408,25 @@ class WhisperTranscriber:
             else:
                 # Default VAD
                 result = whisperCallable.invoke(audio_path, 0, None, None, progress_listener=progressListener)
-
+        
+        # Diarization
+        result = self._handle_diarization(audio_path, result)
         return result
+
+    def _handle_diarization(self, audio_path: str, input: dict):
+        if self.diarization and self.diarization_kwargs:
+            print("Diarizing ", audio_path)
+            diarization_result = list(self.diarization.run(audio_path, **self.diarization_kwargs))
+
+            # Print result
+            print("Diarization result: ")
+            for entry in diarization_result:
+                print(f"  start={entry.start:.1f}s stop={entry.end:.1f}s speaker_{entry.speaker}")
+
+            # Add speakers to result
+            input = self.diarization.mark_speakers(diarization_result, input)
+
+        return input
 
     def _create_progress_listener(self, progress: gr.Progress):
         if (progress is None):
@@ -399,7 +500,7 @@ class WhisperTranscriber:
             os.makedirs(output_dir)
 
         text = result["text"]
-        language = result["language"]
+        language = result["language"] if "language" in result else None
         languageMaxLineWidth = self.__get_max_line_width(language)
 
         print("Max line width " + str(languageMaxLineWidth))
@@ -461,6 +562,10 @@ class WhisperTranscriber:
         if (self.cpu_parallel_context is not None):
             self.cpu_parallel_context.close()
 
+        # Cleanup diarization
+        if (self.diarization is not None):
+            self.diarization.cleanup()
+            self.diarization = None
 
 def create_ui(app_config: ApplicationConfig):
     ui = WhisperTranscriber(app_config.input_audio_max_duration, app_config.vad_process_timeout, app_config.vad_cpu_cores, 
@@ -518,6 +623,17 @@ def create_ui(app_config: ApplicationConfig):
         gr.Checkbox(label="Word Timestamps - Highlight Words", value=app_config.highlight_words),
     ]
 
+    has_diarization_libs = Diarization.has_libraries()
+
+    if not has_diarization_libs:
+        print("Diarization libraries not found - disabling diarization")
+        app_config.diarization = False
+
+    common_diarization_inputs = lambda : [
+        gr.Checkbox(label="Diarization", value=app_config.diarization, interactive=has_diarization_libs),
+        gr.Number(label="Diarization - Speakers", precision=0, value=app_config.diarization_speakers, interactive=has_diarization_libs)
+    ]
+
     is_queue_mode = app_config.queue_concurrency_count is not None and app_config.queue_concurrency_count > 0    
 
     simple_transcribe = gr.Interface(fn=ui.transcribe_webui_simple_progress if is_queue_mode else ui.transcribe_webui_simple, 
@@ -525,6 +641,7 @@ def create_ui(app_config: ApplicationConfig):
         *common_inputs(),
         *common_vad_inputs(),
         *common_word_timestamps_inputs(),
+        *common_diarization_inputs(),
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
@@ -559,13 +676,36 @@ def create_ui(app_config: ApplicationConfig):
         gr.Number(label="Compression ratio threshold", value=app_config.compression_ratio_threshold),
         gr.Number(label="Logprob threshold", value=app_config.logprob_threshold),
         gr.Number(label="No speech threshold", value=app_config.no_speech_threshold),
+
+        *common_diarization_inputs(),
+        gr.Number(label="Diarization - Min Speakers", precision=0, value=app_config.diarization_min_speakers, interactive=has_diarization_libs),
+        gr.Number(label="Diarization - Max Speakers", precision=0, value=app_config.diarization_max_speakers, interactive=has_diarization_libs),
+
     ], outputs=[
         gr.File(label="Download"),
         gr.Text(label="Transcription"), 
         gr.Text(label="Segments")
     ])
 
-    demo = gr.TabbedInterface([simple_transcribe, full_transcribe], tab_names=["Simple", "Full"])
+    perform_extra_interface = gr.Interface(fn=ui.perform_extra,
+                                   description="Perform additional processing on a given JSON or SRT file", article=ui_article, inputs=[
+        gr.Dropdown(choices=sorted(get_language_names()), label="Language", value=app_config.language),
+        gr.Text(label="URL (YouTube, etc.)"),
+        gr.File(label="Upload Audio File", file_count="single"),
+        gr.File(label="Upload JSON/SRT File", file_count="single"),
+        gr.Checkbox(label="Word Timestamps - Highlight Words", value=app_config.highlight_words),
+
+        *common_diarization_inputs(),
+        gr.Number(label="Diarization - Min Speakers", precision=0, value=app_config.diarization_min_speakers, interactive=has_diarization_libs),
+        gr.Number(label="Diarization - Max Speakers", precision=0, value=app_config.diarization_max_speakers, interactive=has_diarization_libs),
+
+    ], outputs=[
+        gr.File(label="Download"),
+        gr.Text(label="Transcription"), 
+        gr.Text(label="Segments")
+    ])
+
+    demo = gr.TabbedInterface([simple_transcribe, full_transcribe, perform_extra_interface], tab_names=["Simple", "Full", "Extra"])
 
     # Queue up the demo
     if is_queue_mode:
@@ -619,6 +759,15 @@ if __name__ == '__main__':
                         help="the compute type to use for inference")
     parser.add_argument("--threads", type=optional_int, default=0, 
                         help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
+    
+    parser.add_argument('--auth_token', type=str, default=default_app_config.auth_token, help='HuggingFace API Token (optional)')
+    parser.add_argument("--diarization", type=str2bool, default=default_app_config.diarization, \
+                        help="whether to perform speaker diarization")
+    parser.add_argument("--diarization_num_speakers", type=int, default=default_app_config.diarization_speakers, help="Number of speakers")
+    parser.add_argument("--diarization_min_speakers", type=int, default=default_app_config.diarization_min_speakers, help="Minimum number of speakers")
+    parser.add_argument("--diarization_max_speakers", type=int, default=default_app_config.diarization_max_speakers, help="Maximum number of speakers")
+    parser.add_argument("--diarization_process_timeout", type=int, default=default_app_config.diarization_process_timeout, \
+                        help="Number of seconds before inactivate diarization processes are terminated. Use 0 to close processes immediately, or None for no timeout.")
 
     args = parser.parse_args().__dict__
 
@@ -627,4 +776,5 @@ if __name__ == '__main__':
     if (threads := args.pop("threads")) > 0:
         torch.set_num_threads(threads)
 
+    print("Using whisper implementation: " + updated_config.whisper_implementation)
     create_ui(app_config=updated_config)
