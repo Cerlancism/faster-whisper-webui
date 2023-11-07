@@ -26,6 +26,10 @@
             "name": "large-v2",
             "url": "large-v2"
         },
+        {
+            "name": "large-v3",
+            "url": "large-v3"
+        },
         // Uncomment to add custom Japanese models
         //{
         //    "name": "whisper-large-v2-mix-jp",
