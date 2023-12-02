@@ -23,6 +23,10 @@
             "url": "large"
         },
         {
+            "name": "large-v1",
+            "url": "large-v1"
+        },
+        {
             "name": "large-v2",
             "url": "large-v2"
         },
