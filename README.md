@@ -54,10 +54,14 @@ When more than one file is processed, the UI will also generate a "All_Output" z
 
 ## Diarization
 
-To detect different speakers in the audio, you can use the [whisper-diarization](https://gitlab.com/aadnk/whisper-diarization) application. 
+To detect different speakers in the audio, you can use the [whisper-diarization](https://gitlab.com/aadnk/whisper-diarization) application, or check "Diarization" in the options.
 
 Download the JSON file after running Whisper on an audio file, and then run app.py in the 
 whisper-diarization repository with the audio file and the JSON file as arguments.
+
+## Translation
+
+To translate the transcript to English, set the task to "Translate". You can also use ChatGPT for this task via my [translate-gpt](https://gitlab.com/aadnk/translate-gpt) CLI application.
 
 ## Whisper Implementation
 
